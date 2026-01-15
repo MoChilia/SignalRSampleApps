@@ -12,5 +12,10 @@ namespace SignalrTestWebApp
         {
             Clients.All.announce(message);
         }
+
+        public DateTime GetServerTime()
+        {
+            return DateTime.Now;
+        }
     }
 }
