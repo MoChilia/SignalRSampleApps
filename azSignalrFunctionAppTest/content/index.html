@@ -1,0 +1,58 @@
+<html>
+
+<body>
+  <h1>Azure SignalR Serverless Sample</h1>
+  <div id="status" style="color: gray;">Connecting...</div>
+  <div id="messages"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/3.1.7/signalr.min.js"></script>
+  <script>
+    let messages = document.querySelector('#messages');
+    const apiBaseUrl = window.location.origin;
+    
+    const connection = new signalR.HubConnectionBuilder()
+        .withUrl(apiBaseUrl + '/api')
+        .withAutomaticReconnect([0, 2000, 5000, 10000, 30000]) // Auto-reconnect with backoff
+        .configureLogging(signalR.LogLevel.Information)
+        .build();
+
+      connection.on('newMessage', (message) => {
+        console.log('Received message:', message);
+        document.getElementById("messages").innerHTML = message;
+      });
+
+    // Handle reconnection events
+    connection.onreconnecting((error) => {
+      console.log('Reconnecting...', error);
+      document.getElementById("status").innerHTML = '<span style="color: orange;">⟳ Reconnecting...</span>';
+    });
+
+    connection.onreconnected((connectionId) => {
+      console.log('Reconnected!', connectionId);
+      document.getElementById("status").innerHTML = '<span style="color: green;">✓ Connected</span>';
+    });
+
+    connection.onclose((error) => {
+      console.log('Connection closed', error);
+      document.getElementById("status").innerHTML = '<span style="color: red;">✗ Disconnected</span>';
+      // Try to restart connection after close
+      setTimeout(() => startConnection(), 5000);
+    });
+
+    async function startConnection() {
+      try {
+        await connection.start();
+        console.log('SignalR Connected!');
+        document.getElementById("status").innerHTML = '<span style="color: green;">✓ Connected</span>';
+      } catch (err) {
+        console.error('SignalR Connection Error:', err);
+        document.getElementById("status").innerHTML = '<span style="color: red;">✗ Connection failed</span>';
+        // Retry after 5 seconds
+        setTimeout(() => startConnection(), 5000);
+      }
+    }
+
+    startConnection();
+  </script>
+</body>
+
+</html>
