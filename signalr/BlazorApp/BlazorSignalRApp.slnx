@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="BlazorSignalRApp.Client/BlazorSignalRApp.Client.csproj" />
+  <Project Path="BlazorSignalRApp/BlazorSignalRApp.csproj" />
+</Solution>
