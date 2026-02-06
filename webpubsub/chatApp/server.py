@@ -1,6 +1,7 @@
 import os
 import json
 
+from dotenv import load_dotenv
 from flask import (
     Flask, 
     request, 
@@ -11,6 +12,8 @@ from flask import (
 from azure.messaging.webpubsubservice import (
     WebPubSubServiceClient
 )
+
+load_dotenv()
 
 hub_name = 'Sample_ChatApp'
 connection_string = os.environ.get('WebPubSubConnectionString')
