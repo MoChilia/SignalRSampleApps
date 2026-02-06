@@ -1,0 +1,117 @@
+============================================================
+Method: POST
+URL: http: //foo.bar:8080/eventhandler
+Content-Type: text/plain; charset=utf-8
+Content-Length: 16
+------------------------------------------------------------
+------------------------------------------------------------
+HEADERS:
+  Host: foo.bar: 8080
+  Ce-Specversion: 1.0
+  Ce-Awpsversion: 1.0
+  Ce-Type: azure.webpubsub.user.echo
+  Ce-Time: 2026-02-06T06: 50: 01Z
+  Ce-Connectionid: -5lEY07I4ldVL-eRTghPjg17fnqAk02
+  Ce-Hub: chatsamplehub
+  Ce-Eventname: echo
+  Webhook-Request-Origin: localhost
+  X-Ms-Client-Request-Id: 55445e10-0d6f-4757-b2d0-4c592b324a9a
+  Ce-Subprotocol: json.webpubsub.azure.v1
+  Ce-Userid: alice
+  Ce-Signature: sha256=927b5622c6938b7c5a773271c582e3ada10b9bfe00a62f155922691df0e7c675, sha256=45033123bb89a6b998fae784b209219f5a9b91111b2ae146ee921104666b1a30
+  Ce-Source: /hubs/chatsamplehub/client/-5lEY07I4ldVL-eRTghPjg17fnqAk02
+  Ce-Id: 2
+  X-Webpubsub-Metadata-Traceid: echo-1770360601545
+  X-Webpubsub-Metadata-Topic: test-echo
+  X-Webpubsub-Metadata-Priority: high
+  Content-Type: text/plain; charset=utf-8
+  Content-Length: 16
+------------------------------------------------------------
+BODY (raw):
+Hello from echo!
+------------------------------------------------------------
+{
+    "type": "message",
+    "from": "server",
+    "dataType": "json",
+    "data": {
+        "echo": "Hello from echo!",
+        "from": "alice",
+        "validation": {
+            "metadataReceivedByServer": true,
+            "receivedMetadataKeys": [
+                "traceid",
+                "topic",
+                "priority"
+            ],
+            "receivedMetadata": {
+                "traceid": "echo-1770360601545",
+                "topic": "test-echo",
+                "priority": "high"
+            }
+        }
+    },
+    "metadata": {
+        "eventtype": "echo-response",
+        "processedby": "server",
+        "servervalidation": "metadata-received",
+        "echoedtraceid": "echo-1770360601545",
+        "echoedtopic": "test-echo",
+        "echoedpriority": "high"
+    }
+}
+============================================================
+Method: POST
+URL: http: //foo.bar:8080/eventhandler
+Content-Type: application/json
+Content-Length: 30
+------------------------------------------------------------
+HEADERS:
+  Host: foo.bar: 8080
+  Ce-Specversion: 1.0
+  Ce-Awpsversion: 1.0
+  Ce-Type: azure.webpubsub.user.myCustomEvent
+  Ce-Time: 2026-02-06T06: 52: 36Z
+  Ce-Connectionid: -5lEY07I4ldVL-eRTghPjg17fnqAk02
+  Ce-Hub: chatsamplehub
+  Ce-Eventname: myCustomEvent
+  Webhook-Request-Origin: localhost
+  X-Ms-Client-Request-Id: b96c4819-e271-403a-8fe6-911e64d419c7
+  Ce-Subprotocol: json.webpubsub.azure.v1
+  Ce-Userid: alice
+  Ce-Signature: sha256=927b5622c6938b7c5a773271c582e3ada10b9bfe00a62f155922691df0e7c675, sha256=45033123bb89a6b998fae784b209219f5a9b91111b2ae146ee921104666b1a30
+  Ce-Source: /hubs/chatsamplehub/client/-5lEY07I4ldVL-eRTghPjg17fnqAk02
+  Ce-Id: 3
+  X-Webpubsub-Metadata-Traceid: custom-1770360756752
+  X-Webpubsub-Metadata-Eventname: myCustomEvent
+  Content-Type: application/json
+  Content-Length: 30
+------------------------------------------------------------
+BODY (raw): {
+    "custom": true,
+    "user": "alice"
+}
+============================================================
+{
+    "type": "message",
+    "from": "server",
+    "dataType": "json",
+    "data": {
+        "received": "myCustomEvent",
+        "validation": {
+            "metadataReceivedByServer": true,
+            "receivedMetadataKeys": [
+                "traceid",
+                "eventname"
+            ],
+            "receivedMetadata": {
+                "traceid": "custom-1770360756752",
+                "eventname": "myCustomEvent"
+            }
+        }
+    },
+    "metadata": {
+        "status": "acknowledged",
+        "servervalidation": "metadata-received"
+    }
+}

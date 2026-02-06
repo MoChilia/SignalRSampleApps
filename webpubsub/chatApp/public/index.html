@@ -2,28 +2,134 @@
   <body>
     <h1>Azure Web PubSub Chat</h1>
     <input id="message" placeholder="Type to chat...">
+    <div style="margin: 10px 0;">
+      <button id="sendEcho">Send Echo Event</button>
+      <button id="sendCustom">Send Custom Event</button>
+    </div>
     <div id="messages"></div>
     <script>
       (async function () {
         let id = prompt('Please input your user name');
         let res = await fetch(`/negotiate?id=${id}`);
         let data = await res.json();
-        let ws = new WebSocket(`${data.url}&id=${id}`);
-        ws.onopen = () => console.log('connected');
+        let ws = new WebSocket(`${data.url}&id=${id}`, 'json.webpubsub.azure.v1');
+        ws.onopen = () => {
+          console.log('connected');
+          addMessage('System', 'Connected to Web PubSub');
+        };
 
         let messages = document.querySelector('#messages');
-        ws.onmessage = event => {
+        
+        function addMessage(from, message, metadata) {
           let m = document.createElement('p');
-          let data = JSON.parse(event.data);
-          m.innerText = `[${data.type || ''}${data.from || ''}] ${data.message}`;
+          let metaStr = metadata ? ` [metadata: ${JSON.stringify(metadata)}]` : '';
+          m.innerText = `[${from}] ${message}${metaStr}`;
           messages.appendChild(m);
+        }
+
+        ws.onmessage = event => {
+          // Debug: Log raw WebSocket payload
+          console.log('='*60);
+          console.log('RAW WEBSOCKET PAYLOAD:');
+          console.log(event.data);
+          console.log('='*60);
+          
+          let data = JSON.parse(event.data);
+          console.log('Parsed:', data);
+          console.log('Metadata in payload:', data.metadata);
+          
+          if (data.type === 'message') {
+            // Handle messages from server or group
+            const serverMetadata = data.metadata || {};
+            const serverData = data.data || {};
+            const validation = serverData.validation || {};
+            
+            // Check if this is a response with validation info (from our event handler)
+            if (validation.metadataReceivedByServer !== undefined) {
+              // This is a response to our sendEvent - validate metadata round-trip
+              const serverReceivedMetadata = validation.metadataReceivedByServer === true;
+              const clientReceivedMetadata = Object.keys(serverMetadata).length > 0;
+              
+              let validationMsg = '';
+              if (serverReceivedMetadata && clientReceivedMetadata) {
+                validationMsg = '✅ METADATA ROUND-TRIP SUCCESS';
+              } else if (serverReceivedMetadata && !clientReceivedMetadata) {
+                validationMsg = '⚠️ Server received metadata, but client did NOT receive response metadata';
+              } else if (!serverReceivedMetadata && clientReceivedMetadata) {
+                validationMsg = '⚠️ Server did NOT receive metadata, but client received response metadata';
+              } else {
+                validationMsg = '❌ METADATA ROUND-TRIP FAILED - no metadata in either direction';
+              }
+              
+              addMessage('validation', validationMsg);
+              addMessage('response-data', JSON.stringify(serverData));
+              if (clientReceivedMetadata) {
+                addMessage('response-metadata', `Server response metadata: ${JSON.stringify(serverMetadata)}`);
+              }
+            } else if (serverData.from || serverData.message) {
+              // Regular chat message
+              addMessage(serverData.from || data.from || 'server', 
+                         serverData.message || JSON.stringify(serverData), 
+                         serverMetadata);
+            } else {
+              addMessage(data.from || 'server', JSON.stringify(serverData), serverMetadata);
+            }
+          } else if (data.type === 'system') {
+            addMessage('system', `${data.event} (userId: ${data.userId || 'N/A'})`);
+          }
         };
 
         let message = document.querySelector('#message');
         message.addEventListener('keypress', e => {
           if (e.charCode !== 13) return;
-          ws.send(message.value);
+          // Send message using subprotocol format
+          ws.send(JSON.stringify({
+            type: 'event',
+            event: 'message',
+            dataType: 'text',
+            data: message.value,
+            ackId: Date.now(),
+            metadata: {
+              'traceid': `msg-${Date.now()}`,
+              'sender': id
+            }
+          }));
           message.value = '';
+        });
+
+        // Send Echo Event with metadata
+        document.querySelector('#sendEcho').addEventListener('click', () => {
+          ws.send(JSON.stringify({
+            type: 'event',
+            event: 'echo',
+            dataType: 'text',
+            data: 'Hello from echo!',
+            ackId: Date.now(),
+            metadata: {
+              'traceid': `echo-${Date.now()}`,
+              'topic': 'test-echo',
+              'priority': 'high'
+            }
+          }));
+          addMessage('You', 'Sent echo event with metadata');
+        });
+
+        // Send Custom Event with metadata
+        document.querySelector('#sendCustom').addEventListener('click', () => {
+          const eventName = prompt('Enter custom event name:', 'myCustomEvent');
+          if (!eventName) return;
+          ws.send(JSON.stringify({
+            type: 'event',
+            event: eventName,
+            dataType: 'json',
+            data: { custom: true, user: id },
+            ackId: Date.now(),
+            metadata: {
+              'traceid': `custom-${Date.now()}`,
+              'eventname': eventName
+            }
+          }));
+          addMessage('You', `Sent custom event '${eventName}' with metadata`);
         });
       })();
     </script>
