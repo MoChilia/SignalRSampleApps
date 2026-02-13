@@ -1,138 +1,462 @@
 <html>
+  <head>
+    <style>
+      body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f9f9f9; }
+      h1 { color: #0078d4; }
+      h3 { margin: 18px 0 8px; color: #333; }
+      .info-bar { background: #e8f4fd; border: 1px solid #b3d9f2; border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; }
+      .info-bar span { font-weight: 600; }
+      .test-section { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; }
+      .test-section h3 { margin-top: 0; color: #0078d4; }
+      button { background: #0078d4; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 4px 4px 4px 0; font-size: 13px; }
+      button:hover { background: #005a9e; }
+      button.secondary { background: #6c757d; }
+      button.secondary:hover { background: #545b62; }
+      button.success { background: #28a745; }
+      button.danger { background: #dc3545; }
+      input, select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; margin: 4px 4px 4px 0; font-size: 13px; }
+      #messages { max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #fff; }
+      .msg { padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; word-break: break-all; }
+      .msg:last-child { border-bottom: none; }
+      .msg-system { color: #6c757d; }
+      .msg-test { color: #0078d4; }
+      .msg-metadata { color: #28a745; font-weight: 600; }
+      .msg-error { color: #dc3545; }
+      .msg-result { background: #f0f9ff; padding: 6px 10px; border-radius: 4px; margin: 2px 0; }
+      .metadata-badge { display: inline-block; background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin: 1px 2px; }
+      .no-metadata-badge { display: inline-block; background: #fce4ec; color: #c62828; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+      .api-label { display: inline-block; background: #fff3e0; color: #e65100; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    </style>
+  </head>
   <body>
-    <h1>Azure Web PubSub Chat</h1>
-    <input id="message" placeholder="Type to chat...">
-    <div style="margin: 10px 0;">
-      <button id="sendEcho">Send Echo Event</button>
-      <button id="sendCustom">Send Custom Event</button>
+    <h1>Azure Web PubSub — REST API Metadata Test</h1>
+
+    <div class="info-bar">
+      <span>User:</span> <span id="infoUser">—</span> &nbsp;|&nbsp;
+      <span>Connection:</span> <span id="infoConn">—</span> &nbsp;|&nbsp;
+      <span>Status:</span> <span id="infoStatus">Disconnected</span>
     </div>
-    <div id="messages"></div>
+
+    <!-- Chat -->
+    <div class="test-section">
+      <h3>💬 Chat</h3>
+      <input id="message" placeholder="Type to chat..." style="width:300px">
+      <button id="sendEcho" class="secondary">Send Echo Event</button>
+    </div>
+
+    <!-- REST API Metadata Tests -->
+    <div class="test-section">
+      <h3>🧪 REST API Metadata Tests</h3>
+      <p style="font-size:12px;color:#666;">Each button calls a server endpoint that invokes the corresponding REST API with <code>X-WebPubSub-Metadata-*</code> headers. Watch the messages panel for received metadata.</p>
+
+      <div style="margin-bottom:10px;">
+        <button id="testSendToAll">Test SendToAll</button>
+        <button id="testSendToConnection">Test SendToConnection</button>
+        <button id="testSendToUser">Test SendToUser</button>
+        <button id="testSendToGroup">Test SendToGroup</button>
+        <button id="joinGroup" class="secondary">Join Group</button>
+        <button id="testRunAll" class="success">▶ Run All Tests</button>
+      </div>
+      <div>
+        <label>Group: <input id="groupName" value="testGroup" style="width:120px"></label>
+        <label>Custom metadata key: <input id="customMetaKey" value="traceid" style="width:100px"></label>
+        <label>Custom metadata value: <input id="customMetaVal" value="" style="width:140px" placeholder="auto-generated"></label>
+      </div>
+    </div>
+
+    <!-- Invoke Event Metadata Tests -->
+    <div class="test-section">
+      <h3>🔗 Invoke Event Metadata Tests</h3>
+      <p style="font-size:12px;color:#666;">Tests the <code>invoke</code> subprotocol message with metadata. The client sends an invoke request with metadata to the upstream event handler, which responds with metadata headers. The response arrives as an <code>invokeResponse</code> frame.</p>
+      <div style="margin-bottom:10px;">
+        <button id="testInvokeSuccess">Invoke (Success + Body)</button>
+        <button id="testInvokeNoBody" class="secondary">Invoke (No Body / 204)</button>
+        <button id="testInvokeError" class="danger">Invoke (Error / 500)</button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="test-section">
+      <h3>📨 Messages &amp; Results</h3>
+      <button id="clearMessages" class="danger" style="float:right;margin-top:-36px;">Clear</button>
+      <div id="messages"></div>
+    </div>
+
     <script>
       (async function () {
         let id = prompt('Please input your user name');
+        if (!id) id = 'user_' + Math.random().toString(36).substr(2, 6);
+        document.getElementById('infoUser').textContent = id;
+
+        let connectionId = null;
         let res = await fetch(`/negotiate?id=${id}`);
         let data = await res.json();
         let ws = new WebSocket(`${data.url}&id=${id}`, 'json.webpubsub.azure.v1');
-        ws.onopen = () => {
-          console.log('connected');
-          addMessage('System', 'Connected to Web PubSub');
-        };
 
         let messages = document.querySelector('#messages');
-        
-        function addMessage(from, message, metadata) {
-          let m = document.createElement('p');
-          let metaStr = metadata ? ` [metadata: ${JSON.stringify(metadata)}]` : '';
-          m.innerText = `[${from}] ${message}${metaStr}`;
+
+        function addMessage(from, message, cssClass, metadata) {
+          let m = document.createElement('div');
+          m.className = 'msg ' + (cssClass || '');
+
+          let metaHtml = '';
+          if (metadata && Object.keys(metadata).length > 0) {
+            metaHtml = '<br>';
+            for (const [k, v] of Object.entries(metadata)) {
+              metaHtml += `<span class="metadata-badge">${k}: ${v}</span> `;
+            }
+          }
+          m.innerHTML = `<strong>[${from}]</strong> ${escapeHtml(typeof message === 'string' ? message : JSON.stringify(message))}${metaHtml}`;
           messages.appendChild(m);
+          messages.scrollTop = messages.scrollHeight;
         }
 
+        function escapeHtml(str) {
+          return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        ws.onopen = () => {
+          document.getElementById('infoStatus').textContent = 'Connected ✅';
+          addMessage('System', 'Connected to Web PubSub', 'msg-system');
+        };
+
+        ws.onclose = () => {
+          document.getElementById('infoStatus').textContent = 'Disconnected ❌';
+          addMessage('System', 'Disconnected from Web PubSub', 'msg-error');
+        };
+
         ws.onmessage = event => {
-          // Debug: Log raw WebSocket payload
-          console.log('='*60);
-          console.log('RAW WEBSOCKET PAYLOAD:');
-          console.log(event.data);
-          console.log('='*60);
-          
-          let data = JSON.parse(event.data);
-          console.log('Parsed:', data);
-          console.log('Metadata in payload:', data.metadata);
-          
-          if (data.type === 'message') {
-            // Handle messages from server or group
-            const serverMetadata = data.metadata || {};
-            const serverData = data.data || {};
-            const validation = serverData.validation || {};
-            
-            // Check if this is a response with validation info (from our event handler)
-            if (validation.metadataReceivedByServer !== undefined) {
-              // This is a response to our sendEvent - validate metadata round-trip
-              const serverReceivedMetadata = validation.metadataReceivedByServer === true;
-              const clientReceivedMetadata = Object.keys(serverMetadata).length > 0;
-              
-              let validationMsg = '';
-              if (serverReceivedMetadata && clientReceivedMetadata) {
-                validationMsg = '✅ METADATA ROUND-TRIP SUCCESS';
-              } else if (serverReceivedMetadata && !clientReceivedMetadata) {
-                validationMsg = '⚠️ Server received metadata, but client did NOT receive response metadata';
-              } else if (!serverReceivedMetadata && clientReceivedMetadata) {
-                validationMsg = '⚠️ Server did NOT receive metadata, but client received response metadata';
-              } else {
-                validationMsg = '❌ METADATA ROUND-TRIP FAILED - no metadata in either direction';
-              }
-              
-              addMessage('validation', validationMsg);
-              addMessage('response-data', JSON.stringify(serverData));
-              if (clientReceivedMetadata) {
-                addMessage('response-metadata', `Server response metadata: ${JSON.stringify(serverMetadata)}`);
-              }
-            } else if (serverData.from || serverData.message) {
-              // Regular chat message
-              addMessage(serverData.from || data.from || 'server', 
-                         serverData.message || JSON.stringify(serverData), 
-                         serverMetadata);
+          console.log('RAW WS:', event.data);
+          let data;
+          try { data = JSON.parse(event.data); } catch { addMessage('ws', event.data, 'msg-system'); return; }
+
+          if (data.type === 'system') {
+            if (data.event === 'connected') {
+              connectionId = data.connectionId;
+              document.getElementById('infoConn').textContent = connectionId || '—';
+              addMessage('system', `connected (connId: ${connectionId}, userId: ${data.userId || 'N/A'})`, 'msg-system');
             } else {
-              addMessage(data.from || 'server', JSON.stringify(serverData), serverMetadata);
+              addMessage('system', `${data.event} (userId: ${data.userId || 'N/A'})`, 'msg-system');
             }
-          } else if (data.type === 'system') {
-            addMessage('system', `${data.event} (userId: ${data.userId || 'N/A'})`);
+            return;
+          }
+
+          if (data.type === 'ack') {
+            if (!data.success) {
+              addMessage('ack', `ackId=${data.ackId} error: ${JSON.stringify(data.error)}`, 'msg-error');
+            }
+            return;
+          }
+
+          if (data.type === 'invokeResponse') {
+            const md = data.metadata || {};
+            const hasMetadata = Object.keys(md).length > 0;
+            const invId = data.invocationId || '?';
+            const success = data.success;
+            const payload = data.data;
+            const error = data.error;
+
+            if (success) {
+              const metaStatus = hasMetadata ? '✅ metadata received' : '❌ NO metadata';
+              const bodyStr = payload !== undefined ? JSON.stringify(payload) : '(no body)';
+              addMessage('invokeResponse', `invocationId=${invId} | success=true | ${metaStatus} | data: ${bodyStr}`, 'msg-result', md);
+
+              // Validate expected server metadata keys
+              const expectedKeys = ['status'];
+              const receivedKeys = Object.keys(md);
+              const allFound = expectedKeys.every(k => receivedKeys.includes(k));
+              if (hasMetadata && allFound) {
+                addMessage('✅ PASS', `Invoke (success): Metadata round-trip verified. Keys: [${receivedKeys}]`, 'msg-metadata');
+              } else if (hasMetadata) {
+                addMessage('⚠️ PARTIAL', `Invoke (success): Some metadata received. Expected: [${expectedKeys}] Got: [${receivedKeys}]`, 'msg-error');
+              } else {
+                addMessage('❌ FAIL', `Invoke (success): No metadata in invokeResponse`, 'msg-error');
+              }
+            } else {
+              const errMsg = error ? `${error.name}: ${error.message}` : 'unknown error';
+              const metaStatus = hasMetadata ? '✅ metadata received' : '❌ NO metadata';
+              addMessage('invokeResponse', `invocationId=${invId} | success=false | ${metaStatus} | error: ${errMsg}`, 'msg-result', md);
+
+              if (hasMetadata) {
+                addMessage('✅ PASS', `Invoke (error): Metadata received on error response. Keys: [${Object.keys(md)}]`, 'msg-metadata');
+              } else {
+                addMessage('❌ FAIL', `Invoke (error): No metadata in error invokeResponse`, 'msg-error');
+              }
+            }
+            return;
+          }
+
+          if (data.type === 'message') {
+            const md = data.metadata || {};
+            const payload = data.data || {};
+            const from = data.from || 'unknown';
+            const hasMetadata = Object.keys(md).length > 0;
+
+            // Determine the API that sent this (from payload or metadata)
+            const apiSource = md.source || payload.sentMetadata?.source || payload.test || '';
+
+            if (payload.test) {
+              // This is a REST API test message
+              const label = payload.test;
+              const metaStatus = hasMetadata ? '✅ metadata received' : '❌ NO metadata';
+              addMessage(label, `${metaStatus} | payload: ${JSON.stringify(payload.payload || payload.message || '')}`, 'msg-result', md);
+
+              // Validate: check expected metadata keys
+              const sentMeta = payload.sentMetadata || {};
+              const sentKeys = Object.keys(sentMeta).sort();
+              const receivedKeys = Object.keys(md).sort();
+              const allFound = sentKeys.every(k => md[k.toLowerCase()] !== undefined || md[k] !== undefined);
+
+              if (hasMetadata && allFound) {
+                addMessage('✅ PASS', `${label}: All expected metadata keys present. Sent: [${sentKeys}] Received: [${receivedKeys}]`, 'msg-metadata');
+              } else if (hasMetadata) {
+                addMessage('⚠️ PARTIAL', `${label}: Some metadata received but not all keys matched. Sent: [${sentKeys}] Received: [${receivedKeys}]`, 'msg-error');
+              } else {
+                addMessage('❌ FAIL', `${label}: No metadata received by client. Expected keys: [${sentKeys}]`, 'msg-error');
+              }
+            } else if (payload.validation) {
+              // Event handler response
+              const v = payload.validation;
+              const status = v.metadataReceivedByServer && hasMetadata ? '✅ ROUND-TRIP' : '⚠️ PARTIAL';
+              addMessage(status, JSON.stringify(payload), 'msg-result', md);
+            } else if (payload.from || payload.message) {
+              addMessage(payload.from || from, payload.message || JSON.stringify(payload), '', md);
+            } else {
+              addMessage(from, JSON.stringify(payload), 'msg-test', md);
+            }
           }
         };
 
-        let message = document.querySelector('#message');
-        message.addEventListener('keypress', e => {
+        // --- Chat ---
+        document.querySelector('#message').addEventListener('keypress', e => {
           if (e.charCode !== 13) return;
-          // Send message using subprotocol format
+          const val = e.target.value;
           ws.send(JSON.stringify({
-            type: 'event',
-            event: 'message',
-            dataType: 'text',
-            data: message.value,
-            ackId: Date.now(),
-            metadata: {
-              'traceid': `msg-${Date.now()}`,
-              'sender': id
-            }
+            type: 'event', event: 'message', dataType: 'text', data: val, ackId: Date.now(),
+            metadata: { 'traceid': `msg-${Date.now()}`, 'sender': id }
           }));
-          message.value = '';
+          e.target.value = '';
         });
 
-        // Send Echo Event with metadata
         document.querySelector('#sendEcho').addEventListener('click', () => {
           ws.send(JSON.stringify({
-            type: 'event',
-            event: 'echo',
-            dataType: 'text',
-            data: 'Hello from echo!',
-            ackId: Date.now(),
-            metadata: {
-              'traceid': `echo-${Date.now()}`,
-              'topic': 'test-echo',
-              'priority': 'high'
-            }
+            type: 'event', event: 'echo', dataType: 'text', data: 'Hello from echo!', ackId: Date.now(),
+            metadata: { 'traceid': `echo-${Date.now()}`, 'topic': 'test-echo', 'priority': 'high' }
           }));
-          addMessage('You', 'Sent echo event with metadata');
+          addMessage('You', 'Sent echo event with metadata', 'msg-test');
         });
 
-        // Send Custom Event with metadata
-        document.querySelector('#sendCustom').addEventListener('click', () => {
-          const eventName = prompt('Enter custom event name:', 'myCustomEvent');
-          if (!eventName) return;
+        // --- Helpers ---
+        function getCustomMetadata() {
+          const key = document.getElementById('customMetaKey').value || 'traceid';
+          const val = document.getElementById('customMetaVal').value || `${key}-${Date.now()}`;
+          return { [key]: val, 'testtimestamp': new Date().toISOString() };
+        }
+
+        async function callTestEndpoint(url, body) {
+          addMessage('→ request', `POST ${url}`, 'msg-test');
+          try {
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            const json = await res.json();
+            addMessage('← response', `${res.status}: ${JSON.stringify(json)}`, json.success ? 'msg-test' : 'msg-error');
+            return json;
+          } catch (err) {
+            addMessage('← error', err.message, 'msg-error');
+            return null;
+          }
+        }
+
+        // --- REST API Metadata Test Buttons ---
+
+        document.getElementById('testSendToAll').addEventListener('click', async () => {
+          const metadata = getCustomMetadata();
+          metadata['api'] = 'send-to-all';
+          await callTestEndpoint('/test/send-to-all', {
+            message: `SendToAll test from ${id}`,
+            metadata
+          });
+        });
+
+        document.getElementById('testSendToConnection').addEventListener('click', async () => {
+          if (!connectionId) { addMessage('Error', 'No connectionId yet — wait for connected event', 'msg-error'); return; }
+          const metadata = getCustomMetadata();
+          metadata['api'] = 'send-to-connection';
+          await callTestEndpoint('/test/send-to-connection', {
+            connectionId,
+            message: `SendToConnection test to ${connectionId}`,
+            metadata
+          });
+        });
+
+        document.getElementById('testSendToUser').addEventListener('click', async () => {
+          const metadata = getCustomMetadata();
+          metadata['api'] = 'send-to-user';
+          await callTestEndpoint('/test/send-to-user', {
+            userId: id,
+            message: `SendToUser test to ${id}`,
+            metadata
+          });
+        });
+
+        document.getElementById('joinGroup').addEventListener('click', async () => {
+          const group = document.getElementById('groupName').value || 'testGroup';
+          // Join via subprotocol
+          ws.send(JSON.stringify({ type: 'joinGroup', group, ackId: Date.now() }));
+          addMessage('You', `Requested to join group "${group}" via subprotocol`, 'msg-system');
+          // Also join via server-side API (using connectionId)
+          if (connectionId) {
+            await callTestEndpoint('/test/add-to-group', { connectionId, group });
+          }
+        });
+
+        document.getElementById('testSendToGroup').addEventListener('click', async () => {
+          const group = document.getElementById('groupName').value || 'testGroup';
+          const metadata = getCustomMetadata();
+          metadata['api'] = 'send-to-group';
+          metadata['group'] = group;
+          await callTestEndpoint('/test/send-to-group', {
+            group,
+            message: `SendToGroup test to ${group}`,
+            metadata
+          });
+        });
+
+        // --- Invoke Event Metadata Test Buttons ---
+
+        document.getElementById('testInvokeSuccess').addEventListener('click', () => {
+          const invId = `inv-${Date.now()}`;
           ws.send(JSON.stringify({
-            type: 'event',
-            event: eventName,
+            type: 'invoke',
+            invocationId: invId,
+            target: 'event',
+            event: 'processDocument',
             dataType: 'json',
-            data: { custom: true, user: id },
-            ackId: Date.now(),
+            data: { documentId: '42', title: 'Test Document' },
             metadata: {
-              'traceid': `custom-${Date.now()}`,
-              'eventname': eventName
+              traceid: `trace-${Date.now()}`,
+              filename: 'report.pdf',
+              priority: 'high'
             }
           }));
-          addMessage('You', `Sent custom event '${eventName}' with metadata`);
+          addMessage('You', `Sent invoke "processDocument" (invocationId=${invId}) with metadata — expecting success + body`, 'msg-test');
         });
+
+        document.getElementById('testInvokeNoBody').addEventListener('click', () => {
+          const invId = `inv-${Date.now()}`;
+          ws.send(JSON.stringify({
+            type: 'invoke',
+            invocationId: invId,
+            target: 'event',
+            event: 'metadataOnly',
+            dataType: 'text',
+            data: 'ping',
+            metadata: {
+              traceid: `trace-${Date.now()}`,
+              reason: 'heartbeat'
+            }
+          }));
+          addMessage('You', `Sent invoke "metadataOnly" (invocationId=${invId}) with metadata — expecting 204 no body`, 'msg-test');
+        });
+
+        document.getElementById('testInvokeError').addEventListener('click', () => {
+          const invId = `inv-${Date.now()}`;
+          ws.send(JSON.stringify({
+            type: 'invoke',
+            invocationId: invId,
+            target: 'event',
+            event: 'errorTest',
+            dataType: 'text',
+            data: 'trigger-error',
+            metadata: {
+              traceid: `trace-${Date.now()}`,
+              scenario: 'error-test'
+            }
+          }));
+          addMessage('You', `Sent invoke "errorTest" (invocationId=${invId}) with metadata — expecting 500 error with metadata`, 'msg-test');
+        });
+
+        document.getElementById('testRunAll').addEventListener('click', async () => {
+          addMessage('🧪', '═══════ Running All Metadata Tests ═══════', 'msg-metadata');
+          const group = document.getElementById('groupName').value || 'testGroup';
+          const delay = ms => new Promise(r => setTimeout(r, ms));
+
+          // 1. SendToAll
+          addMessage('🧪 1/7', 'Testing SendToAll...', 'msg-test');
+          await callTestEndpoint('/test/send-to-all', {
+            message: 'RunAll: SendToAll', metadata: { traceid: `all-${Date.now()}`, api: 'send-to-all', suite: 'run-all' }
+          });
+          await delay(1000);
+
+          // 2. SendToConnection
+          if (connectionId) {
+            addMessage('🧪 2/7', 'Testing SendToConnection...', 'msg-test');
+            await callTestEndpoint('/test/send-to-connection', {
+              connectionId, message: 'RunAll: SendToConnection', metadata: { traceid: `conn-${Date.now()}`, api: 'send-to-connection', suite: 'run-all' }
+            });
+          } else {
+            addMessage('🧪 2/7', 'SKIP SendToConnection — no connectionId', 'msg-error');
+          }
+          await delay(1000);
+
+          // 3. SendToUser
+          addMessage('🧪 3/7', 'Testing SendToUser...', 'msg-test');
+          await callTestEndpoint('/test/send-to-user', {
+            userId: id, message: 'RunAll: SendToUser', metadata: { traceid: `user-${Date.now()}`, api: 'send-to-user', suite: 'run-all' }
+          });
+          await delay(1000);
+
+          // 4. Join group + SendToGroup
+          addMessage('🧪 4/7', 'Testing SendToGroup (joining group first)...', 'msg-test');
+          ws.send(JSON.stringify({ type: 'joinGroup', group, ackId: Date.now() }));
+          if (connectionId) {
+            await callTestEndpoint('/test/add-to-group', { connectionId, group });
+          }
+          await delay(500);
+          await callTestEndpoint('/test/send-to-group', {
+            group, message: 'RunAll: SendToGroup', metadata: { traceid: `grp-${Date.now()}`, api: 'send-to-group', suite: 'run-all' }
+          });
+
+          await delay(1500);
+
+          // 5. Invoke (Success + Body)
+          addMessage('🧪 5/7', 'Testing Invoke (processDocument — success with body)...', 'msg-test');
+          ws.send(JSON.stringify({
+            type: 'invoke', invocationId: `inv-all-${Date.now()}`, target: 'event', event: 'processDocument',
+            dataType: 'json', data: { documentId: 'run-all', title: 'RunAll Doc' },
+            metadata: { traceid: `invoke-${Date.now()}`, filename: 'run-all.pdf', suite: 'run-all' }
+          }));
+          await delay(1500);
+
+          // 6. Invoke (No Body / 204)
+          addMessage('🧪 6/7', 'Testing Invoke (metadataOnly — 204 no body)...', 'msg-test');
+          ws.send(JSON.stringify({
+            type: 'invoke', invocationId: `inv-nobody-${Date.now()}`, target: 'event', event: 'metadataOnly',
+            dataType: 'text', data: 'run-all-ping',
+            metadata: { traceid: `invoke204-${Date.now()}`, suite: 'run-all' }
+          }));
+          await delay(1500);
+
+          // 7. Invoke (Error / 500)
+          addMessage('🧪 7/7', 'Testing Invoke (errorTest — 500 with metadata)...', 'msg-test');
+          ws.send(JSON.stringify({
+            type: 'invoke', invocationId: `inv-err-${Date.now()}`, target: 'event', event: 'errorTest',
+            dataType: 'text', data: 'run-all-error',
+            metadata: { traceid: `invoke500-${Date.now()}`, suite: 'run-all' }
+          }));
+          await delay(1500);
+
+          addMessage('🧪', '═══════ All Tests Complete ═══════', 'msg-metadata');
+        });
+
+        document.getElementById('clearMessages').addEventListener('click', () => {
+          messages.innerHTML = '';
+        });
+
       })();
     </script>
   </body>
-
 </html>
