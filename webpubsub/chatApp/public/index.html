@@ -55,7 +55,6 @@
         <button id="testSendToUser">Test SendToUser</button>
         <button id="testSendToGroup">Test SendToGroup</button>
         <button id="joinGroup" class="secondary">Join Group</button>
-        <button id="testRunAll" class="success">▶ Run All Tests</button>
       </div>
       <div>
         <label>Group: <input id="groupName" value="testGroup" style="width:120px"></label>
@@ -73,6 +72,13 @@
         <button id="testInvokeNoBody" class="secondary">Invoke (No Body / 204)</button>
         <button id="testInvokeError" class="danger">Invoke (Error / 500)</button>
       </div>
+    </div>
+
+    <!-- Run All Tests -->
+    <div class="test-section">
+      <h3>▶ Run All Tests</h3>
+      <p style="font-size:12px;color:#666;">Runs all REST API and Invoke metadata tests sequentially.</p>
+      <button id="testRunAll" class="success">▶ Run All Tests</button>
     </div>
 
     <!-- Results -->
