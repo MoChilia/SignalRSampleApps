@@ -15,7 +15,7 @@ from azure.messaging.webpubsubservice import (
 
 load_dotenv()
 
-hub_name = 'ChatSampleHub'
+hub_name = 'chat'
 connection_string = os.environ.get('WebPubSubConnectionString')
 
 app = Flask(__name__)

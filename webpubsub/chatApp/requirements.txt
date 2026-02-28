@@ -1,0 +1,4 @@
+azure.messaging.webpubsubservice
+dotenv
+websockets
+flask
