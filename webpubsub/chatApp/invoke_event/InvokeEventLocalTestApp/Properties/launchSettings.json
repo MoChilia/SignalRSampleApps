@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "InvokeEventLocalTestApp": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "WEBPUBSUB_CONNECTION_STRING": "",
+        "WEBPUBSUB_HUB": "chat"
+      }
+    }
+  }
+}

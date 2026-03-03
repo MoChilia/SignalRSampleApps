@@ -102,6 +102,8 @@ def handle_user_event(event_name: str, content_type: str):
 
     if event_name == "processOrder":
         return _handle_process_order(content_type, raw)
+    elif event_name == "processOrderError":
+        return _handle_process_order_error(content_type, raw)
     elif event_name == "echo":
         return _handle_echo(content_type, raw)
     elif event_name == "slowEvent":
@@ -139,6 +141,23 @@ def _handle_echo(content_type: str, raw: str):
         return Response(raw, status=200, content_type="text/plain")
     else:
         return Response(raw, status=200, content_type="application/octet-stream")
+
+
+def _handle_process_order_error(content_type: str, raw: str):
+    """Always return an upstream error for invoke error-path testing."""
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    order_id = payload.get("orderId", "unknown")
+    error = {
+        "code": "OrderValidationFailed",
+        "message": f"Order {order_id} is invalid (forced test error).",
+        "orderId": order_id,
+    }
+    print(f"[processOrderError] orderId={order_id} -> returning 500: {error}")
+    return jsonify(error), 500
 
 
 def _handle_slow_event(content_type: str, raw: str):
