@@ -14,9 +14,9 @@ including:
 
 Usage:
   1. pip install flask
-  2. python invoke_event_server.py          (starts on http://0.0.0.0:8080)
+  2. python invoke_event_server.py          (starts on http://0.0.0.0:8888)
   3. Configure your Web PubSub hub "chat" with upstream URL:
-       http://<your-public-host>:8080/eventhandler
+       http://<your-public-host>:8888/eventhandler
      Event handlers should include system events (connect, connected, disconnected)
      and user events (processOrder, echo) — or use "*" to match all user events.
   4. Run invoke_event.py in another terminal.
@@ -144,7 +144,6 @@ def _handle_echo(content_type: str, raw: str):
 
 
 def _handle_process_order_error(content_type: str, raw: str):
-    """Always return an upstream error for invoke error-path testing."""
     try:
         payload = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
@@ -152,12 +151,11 @@ def _handle_process_order_error(content_type: str, raw: str):
 
     order_id = payload.get("orderId", "unknown")
     error = {
-        "code": "OrderValidationFailed",
+        "name": "BadRequest",  # must be a recognized error name
         "message": f"Order {order_id} is invalid (forced test error).",
-        "orderId": order_id,
     }
-    print(f"[processOrderError] orderId={order_id} -> returning 500: {error}")
-    return jsonify(error), 500
+    print(f"[processOrderError] orderId={order_id} -> returning 400: {error}")
+    return Response(json.dumps(error), status=400, content_type="application/problem+json")
 
 
 def _handle_slow_event(content_type: str, raw: str):
@@ -180,6 +178,6 @@ def _handle_slow_event(content_type: str, raw: str):
 # ─── Entry point ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8888
     print(f"Starting upstream event handler on http://0.0.0.0:{port}/eventhandler")
     app.run(host="0.0.0.0", port=port, debug=True)

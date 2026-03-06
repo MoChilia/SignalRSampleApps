@@ -74,6 +74,29 @@ def main():
         except InvocationError as e:
             print(f"Echo failed: {e.message}")
 
+        # Test server error propagation: invoke an event that returns HTTP 500.
+        # The server's processOrderError handler always returns a 500 with an
+        # error payload. The client should receive an InvocationError.
+        try:
+            print("\n=== invokeEvent (processOrderError) — expecting server error ===")
+            result = client.invoke_event(
+                "processOrderError",
+                {"orderId": 42},
+                WebPubSubDataType.JSON,
+                timeout=30.0,
+            )
+            # If we get here, the error was NOT propagated correctly
+            print(f"  BUG: expected InvocationError but got success: {result.data}")
+        except InvocationError as e:
+            print(f"  Correctly received InvocationError:")
+            print(f"    invocation_id : {e.invocation_id}")
+            print(f"    message       : {e.message}")
+            if e.error_detail:
+                print(f"    error name    : {e.error_detail.name}")
+                print(f"    error message : {e.error_detail.message}")
+            else:
+                print(f"    error_detail  : None")
+
         # Test cancel invocation: invoke a slow event with a short timeout.
         # The client will time out and automatically send a cancelInvocation
         # message to the server.

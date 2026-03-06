@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.env
+.venv/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.vs/
+*.csproj
+*.sln
+
+# IDE
+.idea/
+.vscode/
+**/Properties/launchSettings.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temp files
+temp.json
