@@ -117,7 +117,9 @@ def _handle_process_order(content_type: str, raw: str):
     """Process the 'processOrder' invoke event and return a JSON result."""
     try:
         payload = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
         payload = {}
 
     order_id = payload.get("orderId", "unknown")
@@ -146,16 +148,18 @@ def _handle_echo(content_type: str, raw: str):
 def _handle_process_order_error(content_type: str, raw: str):
     try:
         payload = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
         payload = {}
 
     order_id = payload.get("orderId", "unknown")
     error = {
-        "name": "BadRequest",  # must be a recognized error name
+        "code": "BadRequest",  # must be a recognized error name
         "message": f"Order {order_id} is invalid (forced test error).",
     }
     print(f"[processOrderError] orderId={order_id} -> returning 400: {error}")
-    return Response(json.dumps(error), status=400, content_type="application/problem+json")
+    return Response(json.dumps(error), status=400, content_type="application/webpubsub-problem+json")
 
 
 def _handle_slow_event(content_type: str, raw: str):
@@ -165,7 +169,9 @@ def _handle_slow_event(content_type: str, raw: str):
     """
     try:
         payload = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
         payload = {}
 
     delay = payload.get("delay", 30)

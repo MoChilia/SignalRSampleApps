@@ -3,10 +3,8 @@ using Azure.Messaging.WebPubSub;
 
 var connectionString = Environment.GetEnvironmentVariable("WEBPUBSUB_CONNECTION_STRING");
 var hub = Environment.GetEnvironmentVariable("WEBPUBSUB_HUB");
-var successEventName = Environment.GetEnvironmentVariable("WEBPUBSUB_INVOKE_SUCCESS_EVENT") ?? "processOrder";
-var errorEventName = Environment.GetEnvironmentVariable("WEBPUBSUB_INVOKE_ERROR_EVENT") ?? "processOrderError";
-var cancelEventName = Environment.GetEnvironmentVariable("WEBPUBSUB_INVOKE_CANCEL_EVENT") ?? "slowEvent";
-var cancelTimeoutSeconds = int.TryParse(Environment.GetEnvironmentVariable("WEBPUBSUB_INVOKE_CANCEL_TIMEOUT_SECONDS"), out var parsedTimeout)
+var cancelTimeoutSeconds = int.TryParse(
+    Environment.GetEnvironmentVariable("WEBPUBSUB_INVOKE_CANCEL_TIMEOUT_SECONDS"), out var parsedTimeout)
     ? parsedTimeout
     : 3;
 
@@ -17,7 +15,9 @@ if (string.IsNullOrWhiteSpace(connectionString) || string.IsNullOrWhiteSpace(hub
 }
 
 var serviceClient = new WebPubSubServiceClient(connectionString, hub);
-var clientAccessUri = await serviceClient.GetClientAccessUriAsync();
+var clientAccessUri = await serviceClient.GetClientAccessUriAsync(
+    userId: "user1",
+    roles: new[] { "webpubsub.sendToGroup", "webpubsub.joinLeaveGroup" });
 var client = new WebPubSubClient(clientAccessUri);
 
 client.Connected += args =>
@@ -33,61 +33,118 @@ client.Disconnected += args =>
 };
 
 await client.StartAsync();
-Console.WriteLine("Client started.");
+Console.WriteLine("Client started.\n");
+
+int passed = 0, failed = 0;
 
 try
 {
-    Console.WriteLine($"[Test 1] Success event: {successEventName}");
-    await InvokeAndExpectSuccessAsync(successEventName);
+    // ── Test 1: Invoke processOrder with JSON data — expect success ──
+    Console.WriteLine("[Test 1] invokeEvent (processOrder) — expecting success");
+    await InvokeProcessOrderAsync();
 
-    Console.WriteLine($"[Test 2] Error event: {errorEventName}");
-    await InvokeAndExpectErrorAsync(errorEventName);
+    // ── Test 2: Invoke echo with text data — expect echo back ──
+    Console.WriteLine("\n[Test 2] invokeEvent (echo) — expecting text echo back");
+    await InvokeEchoTextAsync();
 
-    Console.WriteLine($"[Test 3] Cancel event: {cancelEventName}, timeout={cancelTimeoutSeconds}s");
-    await InvokeAndExpectCancelAsync(cancelEventName, cancelTimeoutSeconds);
+    // ── Test 3: Invoke processOrderError — expect InvocationFailedException ──
+    Console.WriteLine("\n[Test 3] invokeEvent (processOrderError) — expecting server error");
+    await InvokeProcessOrderErrorAsync();
+
+    // ── Test 4: Invoke slowEvent with short timeout — expect cancellation ──
+    Console.WriteLine($"\n[Test 4] invokeEvent (slowEvent) — expecting timeout & cancel (timeout={cancelTimeoutSeconds}s)");
+    await InvokeSlowEventCancelAsync(cancelTimeoutSeconds);
+
+    // ── Test 5: Concurrent invocations (3 × echo) ──
+    Console.WriteLine("\n[Test 5] concurrent invokeEvent (3 × echo)");
+    await InvokeConcurrentEchoAsync(concurrency: 3);
 }
 finally
 {
     await client.StopAsync();
-    Console.WriteLine("Client stopped.");
+    Console.WriteLine($"\nClient stopped.  passed={passed}  failed={failed}");
 }
 
-async Task InvokeAndExpectSuccessAsync(string eventName)
+// ─── Test helpers ────────────────────────────────────────────────────────
+
+async Task InvokeProcessOrderAsync()
 {
-    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
     var payload = BinaryData.FromObjectAsJson(new { orderId = 1, createdAt = DateTimeOffset.UtcNow });
-
-    var result = await client.InvokeEventAsync(
-        eventName: eventName,
-        content: payload,
-        dataType: WebPubSubDataType.Json,
-        cancellationToken: cts.Token);
-
-    Console.WriteLine($"Success: InvocationId={result.InvocationId}, Data={result.Data}");
-}
-
-async Task InvokeAndExpectErrorAsync(string eventName)
-{
-    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-    var payload = BinaryData.FromObjectAsJson(new { orderId = 2, testCase = "invokeResponseError" });
 
     try
     {
         var result = await client.InvokeEventAsync(
-            eventName: eventName,
+            eventName: "processOrder",
             content: payload,
             dataType: WebPubSubDataType.Json,
             cancellationToken: cts.Token);
 
-        Console.WriteLine($"Unexpected success for error test. InvocationId={result.InvocationId}, Data={result.Data}");
+        Console.WriteLine($"  PASS — InvocationId={result.InvocationId}, DataType={result.DataType}, Data={result.Data}");
+        passed++;
     }
-    catch (InvocationFailedException ex)
+    catch (Exception ex)
     {
-        Console.WriteLine($"Expected invokeResponseError received. InvocationId={ex.InvocationId}, Code={ex.Code}, Message={ex.Message}");
+        Console.WriteLine($"  FAIL — {ex.GetType().Name}: {ex.Message}");
+        failed++;
     }
 }
 
-async Task InvokeAndExpectCancelAsync(string eventName, int timeoutSeconds)
+async Task InvokeEchoTextAsync()
+{
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    var payload = BinaryData.FromString("hello");
+
+    try
+    {
+        var result = await client.InvokeEventAsync(
+            eventName: "echo",
+            content: payload,
+            dataType: WebPubSubDataType.Text,
+            cancellationToken: cts.Token);
+
+        Console.WriteLine($"  PASS — InvocationId={result.InvocationId}, DataType={result.DataType}, Data={result.Data}");
+        passed++;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  FAIL — {ex.GetType().Name}: {ex.Message}");
+        failed++;
+    }
+}
+
+async Task InvokeProcessOrderErrorAsync()
+{
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    var payload = BinaryData.FromObjectAsJson(new { orderId = 42, testCase = "invokeResponseError" });
+
+    try
+    {
+        var result = await client.InvokeEventAsync(
+            eventName: "processOrderError",
+            content: payload,
+            dataType: WebPubSubDataType.Json,
+            cancellationToken: cts.Token);
+
+        Console.WriteLine($"  FAIL — expected InvocationFailedException but got success: InvocationId={result.InvocationId}, Data={result.Data}");
+        failed++;
+    }
+    catch (InvocationFailedException ex)
+    {
+        Console.WriteLine($"  PASS — Correctly received InvocationFailedException:");
+        Console.WriteLine($"    InvocationId : {ex.InvocationId}");
+        Console.WriteLine($"    Code         : {ex.Code}");
+        Console.WriteLine($"    Message      : {ex.Message}");
+        passed++;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  FAIL — unexpected exception {ex.GetType().Name}: {ex.Message}");
+        failed++;
+    }
+}
+
+async Task InvokeSlowEventCancelAsync(int timeoutSeconds)
 {
     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
     var payload = BinaryData.FromObjectAsJson(new
@@ -100,15 +157,60 @@ async Task InvokeAndExpectCancelAsync(string eventName, int timeoutSeconds)
     try
     {
         var result = await client.InvokeEventAsync(
-            eventName: eventName,
+            eventName: "slowEvent",
             content: payload,
             dataType: WebPubSubDataType.Json,
             cancellationToken: cts.Token);
 
-        Console.WriteLine($"Unexpected success for cancel test. InvocationId={result.InvocationId}, Data={result.Data}");
+        Console.WriteLine($"  FAIL — expected OperationCanceledException but got success: InvocationId={result.InvocationId}, Data={result.Data}");
+        failed++;
     }
     catch (OperationCanceledException)
     {
-        Console.WriteLine("Expected cancellation received.");
+        Console.WriteLine("  PASS — Expected cancellation received.");
+        passed++;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  FAIL — unexpected exception {ex.GetType().Name}: {ex.Message}");
+        failed++;
+    }
+}
+
+async Task InvokeConcurrentEchoAsync(int concurrency)
+{
+    var tasks = Enumerable.Range(0, concurrency).Select(async i =>
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var payload = BinaryData.FromString($"concurrent-{i}");
+
+        var result = await client.InvokeEventAsync(
+            eventName: "echo",
+            content: payload,
+            dataType: WebPubSubDataType.Text,
+            cancellationToken: cts.Token);
+
+        return (Index: i, result.InvocationId, result.DataType, result.Data);
+    }).ToList();
+
+    try
+    {
+        var results = await Task.WhenAll(tasks);
+        foreach (var r in results.OrderBy(r => r.Index))
+        {
+            Console.WriteLine($"  [{r.Index}] InvocationId={r.InvocationId}  DataType={r.DataType}  Data={r.Data}");
+        }
+        Console.WriteLine($"  PASS — all {concurrency} concurrent invocations succeeded.");
+        passed++;
+    }
+    catch (InvocationFailedException ex)
+    {
+        Console.WriteLine($"  FAIL — concurrent invoke failed: InvocationId={ex.InvocationId}, Code={ex.Code}, Message={ex.Message}");
+        failed++;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  FAIL — {ex.GetType().Name}: {ex.Message}");
+        failed++;
     }
 }
