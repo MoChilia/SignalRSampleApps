@@ -1,0 +1,4 @@
+{
+    "chat.sessionSync.enabled": true,
+    "git.addAICoAuthor": "off"
+}

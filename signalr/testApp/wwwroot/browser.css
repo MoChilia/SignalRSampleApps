@@ -1,0 +1,129 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f5ef;
+  --panel: #ffffff;
+  --ink: #17201a;
+  --muted: #667067;
+  --line: #d8d4c8;
+  --accent: #0f766e;
+  --accent-ink: #ffffff;
+  --log-bg: #101815;
+  --log-ink: #d7f7e5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, 0.13), transparent 42%),
+    linear-gradient(315deg, rgba(180, 83, 9, 0.12), transparent 38%),
+    var(--bg);
+  font-family: Aptos, Candara, "Segoe UI", sans-serif;
+}
+
+.app-shell {
+  width: min(980px, calc(100vw - 32px));
+  margin: 32px auto;
+}
+
+.toolbar,
+.message-row,
+.status-line {
+  display: grid;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.toolbar {
+  grid-template-columns: minmax(280px, 1fr) minmax(160px, 220px) auto;
+}
+
+.message-row {
+  grid-template-columns: 1fr auto;
+}
+
+.status-line {
+  display: flex;
+  justify-content: space-between;
+  min-height: 28px;
+  color: var(--muted);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input,
+select,
+button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 0 12px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+button {
+  padding: 0 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.log {
+  min-height: 420px;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--log-bg);
+  color: var(--log-ink);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .toolbar,
+  .message-row {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .actions button,
+  .message-row button {
+    flex: 1;
+    width: 100%;
+  }
+}

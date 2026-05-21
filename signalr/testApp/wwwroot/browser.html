@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SignalR Transport Browser Sample</title>
+  <link rel="stylesheet" href="./browser.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="toolbar" aria-label="Connection settings">
+      <label class="field">
+        <span>Hub URL</span>
+        <input id="hubUrl" value="http://localhost:5080/hub" autocomplete="off">
+      </label>
+
+      <label class="field compact">
+        <span>Transport</span>
+        <select id="transport">
+          <option value="auto">Auto</option>
+          <option value="websocket">WebSockets</option>
+          <option value="sse">Server-Sent Events</option>
+          <option value="long-polling">Long Polling</option>
+        </select>
+      </label>
+
+      <div class="actions">
+        <button id="connect">Connect</button>
+        <button id="disconnect" disabled>Disconnect</button>
+      </div>
+    </section>
+
+    <section class="message-row" aria-label="Send message">
+      <input id="message" value="hello from browser" autocomplete="off">
+      <button id="send" disabled>Send</button>
+    </section>
+
+    <section class="status-line" aria-live="polite">
+      <span id="state">Disconnected</span>
+      <span id="connectionId"></span>
+    </section>
+
+    <pre id="log" class="log" aria-label="Connection log"></pre>
+  </main>
+
+  <script src="https://unpkg.com/@microsoft/signalr@10.0.0/dist/browser/signalr.min.js"></script>
+  <script type="module" src="./browser-client.js"></script>
+</body>
+</html>
