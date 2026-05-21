@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SignalR Auth Sample</title>
+  <link rel="stylesheet" href="./site.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <h1>SignalR Auth Sample</h1>
+      <p>The client sends a demo bearer token. ASP.NET Core creates a ClaimsPrincipal, and IUserIdProvider maps it to Clients.User(...).</p>
+    </header>
+
+    <section class="panel">
+      <label>
+        <span>User id</span>
+        <input id="userId" value="alice" autocomplete="off">
+      </label>
+      <label>
+        <span>Tenant id</span>
+        <input id="tenantId" value="contoso" autocomplete="off">
+      </label>
+      <label>
+        <span>Role</span>
+        <input id="role" value="operator" autocomplete="off">
+      </label>
+      <label>
+        <span>Hub URL</span>
+        <input id="hubUrl" value="http://localhost:5100/hub" autocomplete="off">
+      </label>
+      <div class="actions">
+        <button id="connect">Connect</button>
+        <button id="disconnect" disabled>Disconnect</button>
+      </div>
+    </section>
+
+    <section class="panel message-grid">
+      <label>
+        <span>Target user id</span>
+        <input id="targetUserId" value="alice" autocomplete="off">
+      </label>
+      <label>
+        <span>Message</span>
+        <input id="message" value="hello authenticated user" autocomplete="off">
+      </label>
+      <button id="sendToUser" disabled>Send to user</button>
+      <button id="sendToSelf" disabled>Send to self</button>
+      <button id="sendToAll" disabled>Send to all</button>
+    </section>
+
+    <section class="status" aria-live="polite">
+      <span id="state">Disconnected</span>
+      <span id="connectionId"></span>
+    </section>
+
+    <pre id="token" class="log token-log"></pre>
+
+    <pre id="log" class="log"></pre>
+  </main>
+
+  <script src="https://unpkg.com/@microsoft/signalr@10.0.0/dist/browser/signalr.min.js"></script>
+  <script type="module" src="./client.js"></script>
+</body>
+</html>

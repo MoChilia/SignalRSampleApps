@@ -1,0 +1,142 @@
+:root {
+  color-scheme: light;
+  --bg: #f3f6f1;
+  --panel: #ffffff;
+  --ink: #18231d;
+  --muted: #667269;
+  --line: #d1dacd;
+  --accent: #166b5c;
+  --accent-ink: #ffffff;
+  --log-bg: #101915;
+  --log-ink: #d9f8e5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(22, 107, 92, 0.14), transparent 42%),
+    linear-gradient(315deg, rgba(202, 138, 4, 0.14), transparent 38%),
+    var(--bg);
+  font-family: Aptos, Candara, "Segoe UI", sans-serif;
+}
+
+.shell {
+  width: min(1040px, calc(100vw - 32px));
+  margin: 32px auto;
+}
+
+header {
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: clamp(28px, 4vw, 42px);
+  letter-spacing: 0;
+}
+
+p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.message-grid {
+  grid-template-columns: minmax(180px, 220px) 1fr auto auto auto;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input,
+button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+input {
+  width: 100%;
+  padding: 0 12px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+button {
+  padding: 0 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.status {
+  display: flex;
+  justify-content: space-between;
+  min-height: 28px;
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.log {
+  min-height: 420px;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--log-bg);
+  color: var(--log-ink);
+  border-radius: 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+}
+
+.token-log {
+  min-height: 88px;
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+
+@media (max-width: 860px) {
+  .panel,
+  .message-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .actions button,
+  .message-grid button {
+    width: 100%;
+  }
+}
