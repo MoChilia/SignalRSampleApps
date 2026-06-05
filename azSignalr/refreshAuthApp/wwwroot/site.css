@@ -1,0 +1,163 @@
+:root {
+  color-scheme: light;
+  --bg: #f0f4f8;
+  --panel: #ffffff;
+  --ink: #1c2536;
+  --muted: #5b6577;
+  --line: #cfd6e0;
+  --accent: #1f5fbf;
+  --accent-ink: #ffffff;
+  --warn: #c2410c;
+  --expired: #b91c1c;
+  --log-bg: #0f172a;
+  --log-ink: #e2e8f0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(31, 95, 191, 0.12), transparent 42%),
+    linear-gradient(315deg, rgba(202, 138, 4, 0.10), transparent 38%),
+    var(--bg);
+  font-family: Aptos, Candara, "Segoe UI", sans-serif;
+}
+
+.shell {
+  width: min(1040px, calc(100vw - 32px));
+  margin: 32px auto;
+}
+
+header {
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: clamp(28px, 4vw, 42px);
+  letter-spacing: 0;
+}
+
+p {
+  margin: 0;
+  color: var(--muted);
+}
+
+code {
+  background: rgba(15, 23, 42, 0.08);
+  padding: 0 4px;
+  border-radius: 4px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.refresh-grid {
+  grid-template-columns: minmax(180px, 220px) auto 1fr;
+}
+
+.message-grid {
+  grid-template-columns: minmax(180px, 220px) 1fr auto auto auto;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input,
+button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+input {
+  width: 100%;
+  padding: 0 12px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+button {
+  padding: 0 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.countdown {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.countdown.warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.countdown.expired {
+  color: var(--expired);
+  font-weight: 700;
+}
+
+.status {
+  display: flex;
+  justify-content: space-between;
+  min-height: 28px;
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.log {
+  min-height: 380px;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--log-bg);
+  color: var(--log-ink);
+  border-radius: 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+}
+
+.token-log {
+  min-height: 88px;
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+
+@media (max-width: 860px) {
+  .panel,
+  .refresh-grid,
+  .message-grid {
+    grid-template-columns: 1fr;
+  }
+}

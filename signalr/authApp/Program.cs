@@ -1,18 +1,49 @@
-using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseUrls(builder.Configuration["urls"] ?? "http://localhost:5100");
 
 builder.Services
-    .AddAuthentication(DemoBearerAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, DemoBearerAuthenticationHandler>(
-        DemoBearerAuthenticationHandler.SchemeName,
-        options => { });
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = AppTokenProvider.Issuer,
+            ValidateAudience = true,
+            ValidAudience = AppTokenProvider.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(AppTokenProvider.SigningKey)),
+            ValidateLifetime = true,
+            NameClaimType = JwtRegisteredClaimNames.Sub,
+            RoleClaimType = "role"
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+
+                if (!string.IsNullOrEmpty(accessToken)
+                    && context.HttpContext.Request.Path.StartsWithSegments("/hub"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+    });
 
 builder.Services.AddAuthorization();
-builder.Services.AddSingleton<DemoJwtTokenService>();
+builder.Services.AddSingleton<AppTokenProvider>();
 builder.Services.AddSingleton<IUserIdProvider, NameIdentifierUserIdProvider>();
 builder.Services.AddSignalR();
 
@@ -24,7 +55,7 @@ app.UseAuthorization();
 
 app.MapGet("/", () => Results.Redirect("/index.html"));
 app.MapGet("/favicon.ico", () => Results.NoContent());
-app.MapPost("/token", (DemoTokenRequest request, DemoJwtTokenService tokens) =>
+app.MapPost("/token", (DemoTokenRequest request, AppTokenProvider tokens) =>
 {
     if (string.IsNullOrWhiteSpace(request.UserId)
         || string.IsNullOrWhiteSpace(request.TenantId)

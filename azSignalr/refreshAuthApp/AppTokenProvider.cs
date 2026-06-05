@@ -5,15 +5,24 @@ using System.Text.Json;
 
 public sealed class AppTokenProvider
 {
-    public const string Issuer = "azure-signalr-auth-sample";
-    public const string Audience = "azure-signalr-auth-sample-client";
-    public const string SigningKey = "azure-signalr-auth-sample-demo-signing-key-change-me";
+    public const string Issuer = "azure-signalr-refresh-auth-sample";
+    public const string Audience = "azure-signalr-refresh-auth-sample-client";
+    public const string SigningKey = "azure-signalr-refresh-auth-sample-demo-signing-key-change-me";
+
+    // Short lifetime so the refresh scenario is easy to observe end-to-end.
+    public static readonly TimeSpan DefaultLifetime = TimeSpan.FromSeconds(60);
+
     private static readonly byte[] SigningKeyBytes = Encoding.UTF8.GetBytes(SigningKey);
 
-    public (string AccessToken, DateTimeOffset ExpiresAt) CreateToken(string userId, string role, TimeSpan? lifetime = null)
+    /// <summary>
+    /// Creates a JWT with a short <c>exp</c> claim. The refresh-auth Phase 1 feature is designed
+    /// to extend this <c>exp</c> on the running connection without forcing a reconnect.
+    /// </summary>
+    public TokenResult CreateToken(string userId, string role, TimeSpan? lifetime = null)
     {
         var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.Add(lifetime ?? TimeSpan.FromHours(1));
+        var expiresAt = now.Add(lifetime ?? DefaultLifetime);
+
         var header = new Dictionary<string, object>
         {
             ["alg"] = "HS256",
@@ -35,7 +44,7 @@ public sealed class AppTokenProvider
         var unsignedToken = $"{encodedHeader}.{encodedPayload}";
         var signature = Base64UrlEncode(Sign(unsignedToken));
 
-        return ($"{unsignedToken}.{signature}", expiresAt);
+        return new TokenResult($"{unsignedToken}.{signature}", expiresAt);
     }
 
     private static byte[] Sign(string value)
@@ -47,3 +56,5 @@ public sealed class AppTokenProvider
     private static string Base64UrlEncode(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }
+
+public readonly record struct TokenResult(string AccessToken, DateTimeOffset ExpiresAt);

@@ -1,19 +1,17 @@
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
 public sealed class AppTokenProvider
 {
-    public const string Issuer = "azure-signalr-auth-sample";
-    public const string Audience = "azure-signalr-auth-sample-client";
-    public const string SigningKey = "azure-signalr-auth-sample-demo-signing-key-change-me";
+    public const string Issuer = "signalr-auth-sample";
+    public const string Audience = "signalr-auth-sample-client";
+    public const string SigningKey = "signalr-auth-sample-demo-signing-key-change-me";
     private static readonly byte[] SigningKeyBytes = Encoding.UTF8.GetBytes(SigningKey);
 
-    public (string AccessToken, DateTimeOffset ExpiresAt) CreateToken(string userId, string role, TimeSpan? lifetime = null)
+    public string CreateToken(string userId, string tenantId, string role)
     {
         var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.Add(lifetime ?? TimeSpan.FromHours(1));
         var header = new Dictionary<string, object>
         {
             ["alg"] = "HS256",
@@ -25,9 +23,10 @@ public sealed class AppTokenProvider
             ["aud"] = Audience,
             ["sub"] = userId,
             ["name"] = userId,
+            ["tenant_id"] = tenantId,
             ["role"] = role,
             ["iat"] = now.ToUnixTimeSeconds(),
-            ["exp"] = expiresAt.ToUnixTimeSeconds()
+            ["exp"] = now.AddHours(1).ToUnixTimeSeconds()
         };
 
         var encodedHeader = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(header));
@@ -35,7 +34,7 @@ public sealed class AppTokenProvider
         var unsignedToken = $"{encodedHeader}.{encodedPayload}";
         var signature = Base64UrlEncode(Sign(unsignedToken));
 
-        return ($"{unsignedToken}.{signature}", expiresAt);
+        return $"{unsignedToken}.{signature}";
     }
 
     private static byte[] Sign(string value)

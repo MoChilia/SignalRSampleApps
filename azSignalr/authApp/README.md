@@ -5,7 +5,7 @@ This sample is the Azure SignalR Service version of the self-hosted auth app. It
 1. The browser posts user and role values to `/token`.
 2. The app token provider returns a signed demo JWT.
 3. The browser sends that JWT to `/hub` with `accessTokenFactory`.
-4. ASP.NET Core authenticates the JWT and creates a `ClaimsPrincipal`.
+4. ASP.NET Core JWT bearer authentication validates the JWT and creates a `ClaimsPrincipal`.
 5. `IUserIdProvider` maps `ClaimTypes.NameIdentifier` to the SignalR user id.
 6. Azure SignalR Service hosts the client connection, and the hub can call `Clients.User(userId)`.
 
@@ -43,4 +43,4 @@ Invoke-RestMethod http://localhost:5120/token -Method Post -ContentType "applica
 
 The returned `accessToken` is an HS256 JWT with `sub`, `name`, and the .NET role claim type. The SignalR JavaScript client sends it to `/hub/negotiate`; the Azure SignalR SDK includes the authenticated claims in the service token used by Azure SignalR Service.
 
-This sample is for identity mechanics only. A production app should replace the demo token endpoint and `DemoBearerAuthenticationHandler` with a real authentication scheme such as cookie auth, OpenID Connect, or JWT bearer validation.
+This sample is for identity mechanics only. A production app should replace the demo token endpoint with a real identity provider such as Microsoft Entra ID, OpenID Connect, or another JWT issuer.
