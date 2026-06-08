@@ -130,9 +130,58 @@ button:disabled {
 .status {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   min-height: 28px;
   margin-bottom: 12px;
   color: var(--muted);
+}
+
+#state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--muted);
+}
+
+#state::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+#state[data-status="connected"] {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+#state[data-status="reconnecting"] {
+  background: rgba(202, 138, 4, 0.15);
+  color: var(--warn);
+}
+
+#state[data-status="reconnecting"]::before {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+#state[data-status="disconnected"] {
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--muted);
+}
+
+#state[data-status="error"] {
+  background: rgba(185, 28, 28, 0.12);
+  color: var(--expired);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 .log {

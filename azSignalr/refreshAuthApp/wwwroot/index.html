@@ -33,6 +33,10 @@
       <div class="actions">
         <button id="connect">Connect</button>
         <button id="disconnect" disabled>Disconnect</button>
+        <button id="toggleCloseOnAuthExp" type="button" aria-pressed="true"
+          title="Toggle HttpConnectionDispatcherOptions.CloseOnAuthenticationExpiration on the server. Takes effect at the next negotiate (reconnect to apply).">
+          CloseOnAuthExp: ON
+        </button>
       </div>
     </section>
 
@@ -41,7 +45,8 @@
         <span>Extend by (seconds)</span>
         <input id="extendSeconds" value="60" type="number" min="10" max="3600" autocomplete="off">
       </label>
-      <button id="refreshAuthRest" disabled title="POST /api/refresh?hub=ChatHub&id={connectionId} (spec §3). The app server signs an HS256 service token, POSTs to the ASRS data-plane /:refresh endpoint, and returns { accessToken, tokenLifetimeSeconds }. The service advances AuthenticationExpiresOn in place — no client reconnect.">Refresh auth (server runtime, /api/refresh)</button>
+      <button id="refreshAuthRest" disabled title="POST /api/refresh?mode=transient&hub=ChatHub&id={connectionToken} (spec §3, Transient). The app server signs an HS256 service token, POSTs to the ASRS data-plane /:refresh endpoint, and returns { accessToken, tokenLifetimeSeconds, mode }. The service advances AuthenticationExpiresOn in place — no client reconnect.">Refresh (Transient / REST)</button>
+      <button id="refreshAuthPersistent" disabled title="POST /api/refresh?mode=persistent&hub=ChatHub&id={connectionToken} (spec §3, Persistent). The app server writes a RefreshAuthMessage onto the SDK's existing persistent service connection and awaits AckMessage. The service advances AuthenticationExpiresOn in place — no client reconnect.">Refresh (Persistent / service connection)</button>
       <span id="countdown" class="countdown">exp in --s</span>
     </section>
 
