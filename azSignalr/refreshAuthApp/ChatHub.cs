@@ -25,6 +25,13 @@ public sealed class ChatHub : Hub
         return long.TryParse(exp, out var seconds) ? seconds : 0;
     }
 
+    /// <summary>
+    /// Returns the caller's current <c>marker</c> claim as seen by the live server-side principal.
+    /// Call before and after a refresh to confirm the refreshed claim set was actually applied to
+    /// the running connection (the value should change on each refresh).
+    /// </summary>
+    public string WhoAmIMarker() => Context.User?.FindFirst("marker")?.Value ?? "(none)";
+
     public override Task OnConnectedAsync() =>
         Clients.Caller.SendAsync(
             "ReceiveMessage",
@@ -36,9 +43,12 @@ public sealed class ChatHub : Hub
     /// {hubUrl}/refresh). Runs only when the claims changed; same-user is enforced by the
     /// runtime, so <see cref="HubCallerContext.UserIdentifier"/> is unchanged here.
     /// </summary>
-    public override Task OnAuthenticationRefreshedAsync() =>
-        Clients.Caller.SendAsync(
+    public override Task OnAuthenticationRefreshedAsync()
+    {
+        var marker = Context.User?.FindFirst("marker")?.Value ?? "(none)";
+        return Clients.Caller.SendAsync(
             "ReceiveMessage",
             "server",
-            $"Authentication refreshed on the live connection; still {Context.UserIdentifier}.");
+            $"Authentication refreshed on the live connection; still {Context.UserIdentifier} (marker={marker}).");
+    }
 }

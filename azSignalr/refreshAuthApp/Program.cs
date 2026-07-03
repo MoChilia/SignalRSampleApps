@@ -72,11 +72,26 @@ public partial class Program
             options.ConnectionString = connectionString;
             options.AccessTokenLifetime = AppTokenProvider.DefaultLifetime;
             options.ClaimsProvider = context =>
-                context.User.FindFirst(ClaimTypes.NameIdentifier) is { } userId
-                    ? new[] { userId }
-                    : context.User.FindFirst(JwtRegisteredClaimNames.Sub) is { } subject
-                        ? new[] { subject }
-                        : [];
+            {
+                var claims = new List<Claim>();
+                if (context.User.FindFirst(ClaimTypes.NameIdentifier) is { } userIdClaim)
+                {
+                    claims.Add(userIdClaim);
+                }
+                else if (context.User.FindFirst(JwtRegisteredClaimNames.Sub) is { } subjectClaim)
+                {
+                    claims.Add(subjectClaim);
+                }
+
+                // Flow the per-mint marker through negotiate and refresh so the application claim set
+                // changes on every refresh (drives OnAuthenticationRefreshedAsync each time).
+                if (context.User.FindFirst("marker") is { } markerClaim)
+                {
+                    claims.Add(markerClaim);
+                }
+
+                return claims;
+            };
         });
 
         var app = builder.Build();
@@ -117,9 +132,26 @@ public partial class Program
             // Opt into the shipped Default-mode refresh feature.
             options.EnableAuthenticationRefresh = true;
 
-            // Optional accept/reject gate.
+            // Accept/reject gate. Runs on this app server (with the real HttpContext) before ASRS mutates
+            // anything. Demo policy: reject the refresh when the new token's role is "blocked" so the
+            // 403 permission_change_rejected path can be exercised (run the client with role "blocked").
+            // Returning false changes nothing on the live connection.
             options.OnAuthenticationRefresh = context =>
-                ValueTask.FromResult(context.NewUser?.Identity?.IsAuthenticated == true);
+            {
+                var isAuthenticated = context.NewUser?.Identity?.IsAuthenticated == true;
+                var isBlocked = string.Equals(
+                    context.NewUser?.FindFirst("role")?.Value, "blocked", StringComparison.OrdinalIgnoreCase);
+                var accept = isAuthenticated && !isBlocked;
+
+                context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("OnAuthenticationRefresh")
+                    .LogInformation(
+                        "OnAuthenticationRefresh gate: user={User} accept={Accept} (authenticated={Authenticated}, blocked={Blocked})",
+                        context.NewUser?.Identity?.Name, accept, isAuthenticated, isBlocked);
+
+                return ValueTask.FromResult(accept);
+            };
         }).RequireAuthorization();
 
         return app;

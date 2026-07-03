@@ -1,16 +1,28 @@
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using System.Net.Http.Json;
 
 // Minimal .NET client for the refreshAuthApp server. Exercises the locally-built aspnetcore
 // SignalR client's Default-mode auth refresh (WithAuthenticationRefresh + {hubUrl}/refresh).
 //
-// Usage: dotnet run [serverBaseUrl] [userId] [role]
-//   e.g. dotnet run http://localhost:5121 alice user
+// Usage: dotnet run [serverBaseUrl] [userId] [role] [transport]
+//   transport = ws | sse | lp | all   (default ws)
+//   e.g. dotnet run http://localhost:5121 alice user sse
 
 var serverBaseUrl = (args.Length > 0 ? args[0] : "http://localhost:5121").TrimEnd('/');
 var userId = args.Length > 1 ? args[1] : "alice";
 var role = args.Length > 2 ? args[2] : "user";
+var transportArg = (args.Length > 3 ? args[3] : "ws").ToLowerInvariant();
 var hubUrl = $"{serverBaseUrl}/hub";
+
+var transports = transportArg switch
+{
+    "sse" => HttpTransportType.ServerSentEvents,
+    "lp" or "longpolling" => HttpTransportType.LongPolling,
+    "ws" or "websockets" => HttpTransportType.WebSockets,
+    "all" => HttpTransportType.WebSockets | HttpTransportType.ServerSentEvents | HttpTransportType.LongPolling,
+    _ => HttpTransportType.WebSockets,
+};
 
 using var http = new HttpClient();
 
@@ -31,6 +43,7 @@ var connection = new HubConnectionBuilder()
     .WithUrl(hubUrl, options =>
     {
         options.AccessTokenProvider = GetAppTokenAsync;
+        options.Transports = transports;
     })
     .WithAuthenticationRefresh(o =>
     {
@@ -60,10 +73,10 @@ connection.Closed += error =>
     return Task.CompletedTask;
 };
 
-Console.WriteLine($"Connecting to {hubUrl} as '{userId}' ({role})...");
+Console.WriteLine($"Connecting to {hubUrl} as '{userId}' ({role}) over {transports}...");
 await connection.StartAsync();
 Console.WriteLine($"[conn] connected: {connection.ConnectionId}");
-Console.WriteLine("Commands: type a message to broadcast (SendToAll), '/refresh' to force a refresh, empty line / Ctrl+C to exit.");
+Console.WriteLine("Commands: message=broadcast (SendToAll), '/refresh'=force refresh, '/marker'=query server-side marker claim, empty line / Ctrl+C to exit.");
 
 while (true)
 {
@@ -77,6 +90,15 @@ while (true)
     {
         Console.WriteLine("[refresh] manual RefreshAuthenticationAsync()...");
         await connection.RefreshAuthenticationAsync();
+        continue;
+    }
+
+    if (line.Equals("/marker", StringComparison.OrdinalIgnoreCase))
+    {
+        // Invokes a hub method that returns Context.User's 'marker' claim, so we can confirm the
+        // refreshed claim set was actually applied to the live server-side connection principal.
+        var marker = await connection.InvokeAsync<string>("WhoAmIMarker");
+        Console.WriteLine($"[marker] server-side Context.User marker={marker}");
         continue;
     }
 

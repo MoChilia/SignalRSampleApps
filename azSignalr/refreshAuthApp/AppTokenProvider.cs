@@ -35,6 +35,10 @@ public sealed class AppTokenProvider
             ["sub"] = userId,
             ["name"] = userId,
             ["role"] = role,
+            // A per-mint marker so each refreshed token carries a different application claim set. This
+            // exercises the claims-changed path in auth refresh: the runtime pushes the new principal to
+            // the app server and Hub.OnAuthenticationRefreshedAsync runs on every refresh.
+            ["marker"] = Guid.NewGuid().ToString("N"),
             ["iat"] = now.ToUnixTimeSeconds(),
             ["exp"] = expiresAt.ToUnixTimeSeconds()
         };
