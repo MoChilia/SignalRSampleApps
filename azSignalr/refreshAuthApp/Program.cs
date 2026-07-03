@@ -66,6 +66,15 @@ public partial class Program
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton<AppTokenProvider>();
         builder.Services.AddSingleton<IUserIdProvider, NameIdentifierUserIdProvider>();
+        // Optional server->client "Tick" broadcaster for the message-loss demo. With auth refresh the
+        // stream is gapless; without it the connection is aborted at token expiry and the client reports
+        // dropped ticks until WithAutomaticReconnect re-establishes. Enabled by default; toggle via config:
+        //   dotnet run -- --Tick:Enabled=false        (or env: Tick__Enabled=false)
+        //   dotnet run -- --Tick:IntervalSeconds=1    (broadcast interval, default 2)
+        if (builder.Configuration.GetValue("Tick:Enabled", true))
+        {
+            builder.Services.AddHostedService<TickBroadcaster>();
+        }
         builder.Services.AddSignalR().AddAzureSignalR(options =>
         {
             // https://github.com/Azure/azure-signalr/blob/dev/src/Microsoft.Azure.SignalR/ServiceOptions.cs
@@ -164,3 +173,42 @@ public partial class Program
 }
 
 public sealed record DemoTokenRequest(string UserId, string Role);
+
+// Broadcasts an incrementing "Tick" to all connected clients every 2 seconds via the Azure SignalR
+// service connection. The monotonically increasing sequence number makes any connection drop visible:
+// with auth refresh the client receives every tick; without it, ticks pause across the abort/reconnect.
+internal sealed class TickBroadcaster(IHubContext<ChatHub> hub, IConfiguration config, ILogger<TickBroadcaster> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var intervalSeconds = Math.Max(1, config.GetValue("Tick:IntervalSeconds", 2));
+
+        // Give the Azure SignalR server<->service connection time to establish before the first
+        // broadcast; otherwise early ticks fail with FailedWritingMessageToServiceException
+        // ("Unable to write message to endpoint") because the service connection isn't up yet.
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        var seq = 0;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(intervalSeconds));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            seq++;
+            try
+            {
+                await hub.Clients.All.SendAsync("Tick", seq, DateTimeOffset.UtcNow.ToString("HH:mm:ss"), stoppingToken);
+            }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                // Transient while the service connection reconnects (e.g. right after startup). Keep ticking.
+                logger.LogDebug("Tick #{Seq} not sent (service connection not ready): {Message}", seq, ex.Message);
+            }
+        }
+    }
+}
