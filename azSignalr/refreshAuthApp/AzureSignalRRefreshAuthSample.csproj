@@ -1,13 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- net11 is required: HttpConnectionDispatcherOptions.EnableAuthenticationRefresh and the
+         Azure SignalR SDK's refresh handler (AuthRefreshMatcherPolicy / RefreshHandler) are guarded
+         by #if NET11_0_OR_GREATER. -->
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>9c9a7d61-3c2d-44f8-9d11-azure-signalr-refresh-auth</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <!-- 11.0.0-dev comes from the local-aspnetcore feed in NuGet.config. .NET 11 is still preview,
+         so there is no stable 11.0.0 JwtBearer on nuget.org. Build/run with the local .NET 11 SDK:
+         C:\Users\shiyingchen\aspnetcore\.dotnet\dotnet.exe -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0-dev" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,14 +1,11 @@
 const userIdInput = document.querySelector("#userId");
 const roleInput = document.querySelector("#role");
 const hubUrlInput = document.querySelector("#hubUrl");
-const extendSecondsInput = document.querySelector("#extendSeconds");
 const targetUserIdInput = document.querySelector("#targetUserId");
 const messageInput = document.querySelector("#message");
 const connectButton = document.querySelector("#connect");
 const disconnectButton = document.querySelector("#disconnect");
-const toggleCloseOnAuthExpButton = document.querySelector("#toggleCloseOnAuthExp");
 const refreshAuthRestButton = document.querySelector("#refreshAuthRest");
-const refreshAuthPersistentButton = document.querySelector("#refreshAuthPersistent");
 const sendToUserButton = document.querySelector("#sendToUser");
 const sendToSelfButton = document.querySelector("#sendToSelf");
 const sendToAllButton = document.querySelector("#sendToAll");
@@ -19,7 +16,7 @@ const tokenOutput = document.querySelector("#token");
 const logOutput = document.querySelector("#log");
 
 let connection;
-let httpClient; // captures the negotiate connectionToken so /api/refresh can target the connection without cross-pod forwarding.
+let httpClient; // captures the negotiate connectionToken so {hubUrl}/refresh can target the live connection.
 let currentToken = null;
 let currentExpiresAt = 0; // unix seconds
 let countdownTimer = null;
@@ -60,59 +57,10 @@ class ConnectionTokenCapturingHttpClient extends signalR.DefaultHttpClient {
 
 connectButton.addEventListener("click", connect);
 disconnectButton.addEventListener("click", disconnect);
-toggleCloseOnAuthExpButton.addEventListener("click", toggleCloseOnAuthExp);
-refreshAuthRestButton.addEventListener("click", () => refreshAuthVia("transient"));
-refreshAuthPersistentButton.addEventListener("click", () => refreshAuthVia("persistent"));
+refreshAuthRestButton.addEventListener("click", refreshAuthDefaultMode);
 sendToUserButton.addEventListener("click", sendToUser);
 sendToSelfButton.addEventListener("click", sendToSelf);
 sendToAllButton.addEventListener("click", sendToAll);
-
-// Pull the current CloseOnAuthenticationExpiration value from the server on page load so
-// the toggle button reflects the actual HttpConnectionDispatcherOptions state.
-refreshCloseOnAuthExpLabel().catch(() => { /* server not up yet — ignored */ });
-
-// Flips HttpConnectionDispatcherOptions.CloseOnAuthenticationExpiration on the server.
-// The new value applies at the next negotiate; existing WebSockets keep their original arm state
-// (the service-side abort is set at negotiate time from the negotiate claim).
-async function toggleCloseOnAuthExp() {
-  toggleCloseOnAuthExpButton.disabled = true;
-  try {
-    const current = toggleCloseOnAuthExpButton.getAttribute("aria-pressed") === "true";
-    const next = !current;
-    const hubUrl = hubUrlInput.value.trim();
-    const url = new URL("/api/options/closeOnAuthExp", hubUrl).toString();
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: next }),
-    });
-    if (!response.ok) {
-      log(`[options] toggle failed http=${response.status}`);
-      return;
-    }
-    const body = await response.json().catch(() => ({}));
-    applyCloseOnAuthExpLabel(Boolean(body.closeOnAuthExp));
-    log(`[options] CloseOnAuthenticationExpiration=${body.closeOnAuthExp} (applies at next negotiate — reconnect to observe)`);
-  } finally {
-    toggleCloseOnAuthExpButton.disabled = false;
-  }
-}
-
-async function refreshCloseOnAuthExpLabel() {
-  const hubUrl = hubUrlInput.value.trim();
-  const url = new URL("/api/options/closeOnAuthExp", hubUrl).toString();
-  const response = await fetch(url);
-  if (!response.ok) {
-    return;
-  }
-  const body = await response.json().catch(() => ({}));
-  applyCloseOnAuthExpLabel(Boolean(body.closeOnAuthExp));
-}
-
-function applyCloseOnAuthExpLabel(enabled) {
-  toggleCloseOnAuthExpButton.setAttribute("aria-pressed", String(enabled));
-  toggleCloseOnAuthExpButton.textContent = `CloseOnAuthExp: ${enabled ? "ON" : "OFF"}`;
-}
 
 async function connect() {
   const userId = userIdInput.value.trim();
@@ -183,75 +131,69 @@ async function disconnect() {
   setBusy(false);
 }
 
-// Mirrors azure-signalr-specs/specs/signalr-refresh-auth.md §3 (Serverless mode):
-//   POST /api/refresh?mode={transient|persistent}&hub={hub}&id={connectionIdOrToken}
-//   Authorization: Bearer {app-token}
-//   200 OK { accessToken, tokenLifetimeSeconds, mode }
+// Default mode — the shipped Azure SignalR refresh feature (signalr-refresh-auth.md §2):
+//   POST {hubUrl}/refresh?id={connectionToken}
+//   Authorization: Bearer {fresh-app-token}
+//   200 OK { accessToken, tokenLifetimeSeconds }
 //
-// Both modes converge on the same runtime handler
-// (`ClientConnectionLifetimeManager.RefreshClientAuthAsync` → `RefreshLocalClientAuthAsync` →
-//  `SignalRClientConnectionContext.TryRefreshAuthentication`):
-//   - transient  : the app server signs a service token and POSTs /:refresh; the ASRS REST controller
-//                  builds a RefreshAuthMessage and forwards it via the message broker.
-//   - persistent : the app server writes the same RefreshAuthMessage over its existing service connection.
-// Either way the ASRS runtime advances CloseOnAuthExpirationFeature.ExpiresOn in place; the browser
-// keeps the same WebSocket and gets a refreshed accessToken for the next (re)connect.
-async function refreshAuthVia(mode) {
+// The SDK's AuthRefreshMatcherPolicy intercepts {hubUrl}/refresh and runs RefreshHandler: it
+// validates the app token, sends a RefreshAuthMessage to the runtime (which advances
+// AuthenticationExpiresOn in place — no reconnect), and returns a refreshed SERVICE accessToken.
+// We mint a fresh app token first (the IdP stand-in) so its exp becomes the new expireTime.
+async function refreshAuthDefaultMode() {
   if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
     return;
   }
 
   const hubUrl = hubUrlInput.value.trim();
-  const extendSeconds = Number(extendSecondsInput.value) || 60;
-  // Refresh-auth requires the negotiate `connectionToken` (captured by
-  // ConnectionTokenCapturingHttpClient). connectionId is NOT a valid fallback — the service
-  // only resolves the live connection via the token form of `id={connectionIdOrToken}`.
+  // Default mode keys the refresh on the negotiate connectionToken (captured by
+  // ConnectionTokenCapturingHttpClient). connectionId is not accepted — the runtime resolves
+  // the live connection only via the token form of id={connectionToken}.
   const connectionToken = httpClient?.connectionToken;
   if (!connectionToken) {
-    log(`[api/refresh skipped] mode=${mode}: no connectionToken captured from negotiate`);
+    log("[refresh skipped] default mode: no connectionToken captured from negotiate");
     return;
   }
 
-  const button = mode === "persistent" ? refreshAuthPersistentButton : refreshAuthRestButton;
-  button.disabled = true;
+  refreshAuthRestButton.disabled = true;
   try {
-    log(`[api/refresh] mode=${mode} POST id=<connectionToken> +${extendSeconds}s`);
-    const url = new URL(
-      `/api/refresh?mode=${encodeURIComponent(mode)}&hub=ChatHub&id=${encodeURIComponent(connectionToken)}&additionalSeconds=${extendSeconds}`,
-      hubUrl
-    ).toString();
-    const response = await fetch(url, {
+    // 1) Acquire a fresh APP token (extended exp) from the IdP stand-in (/token).
+    const userId = userIdInput.value.trim();
+    const role = roleInput.value.trim();
+    const tokenResponse = await fetch(new URL("/token", hubUrl).toString(), {
       method: "POST",
-      headers: {
-        // Spec §3: app token in Authorization: Bearer header (validated by JwtBearer middleware).
-        "Authorization": `Bearer ${currentToken}`,
-      },
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role }),
+    });
+    if (!tokenResponse.ok) {
+      log(`[refresh failed] default mode: token mint http=${tokenResponse.status}`);
+      return;
+    }
+    const freshAppToken = (await tokenResponse.json()).accessToken;
+
+    // 2) POST the fresh app token to the SDK-intercepted {hubUrl}/refresh.
+    const refreshUrl = `${hubUrl.replace(/\/$/, "")}/refresh?id=${encodeURIComponent(connectionToken)}`;
+    log("[refresh] default mode POST {hubUrl}/refresh?id=<connectionToken>");
+    const response = await fetch(refreshUrl, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${freshAppToken}` },
     });
 
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      // Spec §7 failure mapping: 401 / 404 / 500.
-      if (body.error === "RefreshAuthFailed") {
-        log(`[api/refresh failed] mode=${mode} http=${response.status} service=${body.serviceStatus} ${body.serviceBody ?? ""}`);
-      } else if (body.error || body.message) {
-        log(`[api/refresh failed] mode=${mode} http=${response.status} ${body.error ?? ""}: ${body.message ?? ""}`);
-      } else {
-        log(`[api/refresh failed] mode=${mode} http=${response.status}`);
-      }
+      // Spec §7: { error } — refresh_disabled / invalid_token / connection_not_found /
+      // permission_change_rejected / windows_identity_not_supported / internal_server_error.
+      log(`[refresh failed] default mode http=${response.status} error=${body.error ?? "?"}`);
       return;
     }
 
-    // Spec §2/§3 success shape — apply { accessToken, tokenLifetimeSeconds } so the next
-    // accessTokenFactory call uses the refreshed token.
-    applyToken({
-      accessToken: body.accessToken,
-      expiresIn: body.tokenLifetimeSeconds,
-    });
-    log(`[api/refresh ok] mode=${body.mode ?? mode} tokenLifetimeSeconds=${body.tokenLifetimeSeconds}; connection state still: ${connection.state}`);
+    // 3) Adopt the refreshed SERVICE accessToken so the next (re)connect uses it; reset the countdown.
+    applyToken({ accessToken: body.accessToken, expiresIn: body.tokenLifetimeSeconds });
+    log(`[refresh ok] default mode tokenLifetimeSeconds=${body.tokenLifetimeSeconds}; connection still ${connection.state}`);
   } catch (error) {
-    log(`[api/refresh failed] mode=${mode} ${error}`);
+    log(`[refresh failed] default mode ${error}`);
   } finally {
-    button.disabled = !connection || connection.state !== signalR.HubConnectionState.Connected;
+    refreshAuthRestButton.disabled = !connection || connection.state !== signalR.HubConnectionState.Connected;
   }
 }
 
@@ -339,7 +281,6 @@ function setConnected(isConnected, error) {
   connectButton.disabled = isConnected;
   disconnectButton.disabled = !isConnected;
   refreshAuthRestButton.disabled = !isConnected;
-  refreshAuthPersistentButton.disabled = !isConnected;
   sendToUserButton.disabled = !isConnected;
   sendToSelfButton.disabled = !isConnected;
   sendToAllButton.disabled = !isConnected;
@@ -355,7 +296,6 @@ function setBusy(isBusy) {
   connectButton.disabled = isBusy || connected;
   disconnectButton.disabled = isBusy || !connected;
   refreshAuthRestButton.disabled = isBusy || !connected;
-  refreshAuthPersistentButton.disabled = isBusy || !connected;
   sendToUserButton.disabled = isBusy || !connected;
   sendToSelfButton.disabled = isBusy || !connected;
   sendToAllButton.disabled = isBusy || !connected;

@@ -30,4 +30,15 @@ public sealed class ChatHub : Hub
             "ReceiveMessage",
             "server",
             $"Connected through Azure SignalR Service as {Context.UserIdentifier}.");
+
+    /// <summary>
+    /// Invoked after ASRS applies a refreshed principal to this connection (Default-mode
+    /// {hubUrl}/refresh). Runs only when the claims changed; same-user is enforced by the
+    /// runtime, so <see cref="HubCallerContext.UserIdentifier"/> is unchanged here.
+    /// </summary>
+    public override Task OnAuthenticationRefreshedAsync() =>
+        Clients.Caller.SendAsync(
+            "ReceiveMessage",
+            "server",
+            $"Authentication refreshed on the live connection; still {Context.UserIdentifier}.");
 }

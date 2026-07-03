@@ -30,23 +30,24 @@
         <span>Hub URL</span>
         <input id="hubUrl" value="http://localhost:5121/hub" autocomplete="off">
       </label>
+      <label>
+        <span>Transport</span>
+        <select id="transport" autocomplete="off"
+          title="Selects HttpTransportType for the SignalR client. 'Auto' lets the client negotiate WebSockets → SSE → LongPolling. SkipNegotiation is auto-disabled for non-WebSocket choices so the negotiate round-trip still happens (required by Azure SignalR).">
+          <option value="auto" selected>Auto (negotiate)</option>
+          <option value="webSockets">WebSockets</option>
+          <option value="serverSentEvents">Server-Sent Events</option>
+          <option value="longPolling">Long Polling</option>
+        </select>
+      </label>
       <div class="actions">
         <button id="connect">Connect</button>
         <button id="disconnect" disabled>Disconnect</button>
-        <button id="toggleCloseOnAuthExp" type="button" aria-pressed="true"
-          title="Toggle HttpConnectionDispatcherOptions.CloseOnAuthenticationExpiration on the server. Takes effect at the next negotiate (reconnect to apply).">
-          CloseOnAuthExp: ON
-        </button>
       </div>
     </section>
 
     <section class="panel refresh-grid">
-      <label>
-        <span>Extend by (seconds)</span>
-        <input id="extendSeconds" value="60" type="number" min="10" max="3600" autocomplete="off">
-      </label>
-      <button id="refreshAuthRest" disabled title="POST /api/refresh?mode=transient&hub=ChatHub&id={connectionToken} (spec §3, Transient). The app server signs an HS256 service token, POSTs to the ASRS data-plane /:refresh endpoint, and returns { accessToken, tokenLifetimeSeconds, mode }. The service advances AuthenticationExpiresOn in place — no client reconnect.">Refresh (Transient / REST)</button>
-      <button id="refreshAuthPersistent" disabled title="POST /api/refresh?mode=persistent&hub=ChatHub&id={connectionToken} (spec §3, Persistent). The app server writes a RefreshAuthMessage onto the SDK's existing persistent service connection and awaits AckMessage. The service advances AuthenticationExpiresOn in place — no client reconnect.">Refresh (Persistent / service connection)</button>
+      <button id="refreshAuthRest" disabled title="Default mode (spec §2). POST {hubUrl}/refresh?id={connectionToken} with a fresh app token in Authorization: Bearer. The Azure SignalR SDK's AuthRefreshMatcherPolicy intercepts /hub/refresh, validates the app token, sends a RefreshAuthMessage to the runtime (advancing AuthenticationExpiresOn in place — no reconnect), and returns { accessToken, tokenLifetimeSeconds }.">Refresh (/hub/refresh)</button>
       <span id="countdown" class="countdown">exp in --s</span>
     </section>
 

@@ -1,0 +1,35 @@
+How to build and consume the local aspnetcore SignalR client
+============================================================
+
+1. Pack the client packages (run from C:\Users\shiyingchen\aspnetcore):
+
+   $env:DOTNET_ROOT = "$PWD\.dotnet"
+
+   # Pack each project individually (Arcade -projects takes one path at a time)
+   $projs = @(
+     "src\Servers\Connections.Abstractions\src\Microsoft.AspNetCore.Connections.Abstractions.csproj",
+     "src\SignalR\clients\csharp\Client\src\Microsoft.AspNetCore.SignalR.Client.csproj",
+     "src\SignalR\clients\csharp\Client.Core\src\Microsoft.AspNetCore.SignalR.Client.Core.csproj",
+     "src\SignalR\clients\csharp\Http.Connections.Client\src\Microsoft.AspNetCore.Http.Connections.Client.csproj",
+     "src\SignalR\common\Http.Connections.Common\src\Microsoft.AspNetCore.Http.Connections.Common.csproj",
+     "src\SignalR\common\SignalR.Common\src\Microsoft.AspNetCore.SignalR.Common.csproj",
+     "src\SignalR\common\Protocols.Json\src\Microsoft.AspNetCore.SignalR.Protocols.Json.csproj"
+   )
+   foreach ($p in $projs) {
+     .\eng\build.ps1 -pack -projects "$PWD\$p" -msbuildEngine dotnet -noBuildNative -noBuildJava -noBuildNodeJS -c Debug
+   }
+
+   Packages land in: artifacts\packages\Debug\Shipping  (version 11.0.0-dev)
+
+2. Restore and run the client (from this folder):
+
+   C:\Users\shiyingchen\aspnetcore\.dotnet\dotnet.exe restore
+   C:\Users\shiyingchen\aspnetcore\.dotnet\dotnet.exe run -- http://localhost:5121 alice user
+
+3. If you re-pack after editing aspnetcore, clear the NuGet cache first:
+
+   Remove-Item "$env:USERPROFILE\.nuget\packages\microsoft.aspnetcore.connections.abstractions\11.0.0-dev" -Recurse -Force
+   Remove-Item "$env:USERPROFILE\.nuget\packages\microsoft.aspnetcore.signalr.client\11.0.0-dev" -Recurse -Force
+   Remove-Item "$env:USERPROFILE\.nuget\packages\microsoft.aspnetcore.signalr.client.core\11.0.0-dev" -Recurse -Force
+   Remove-Item "$env:USERPROFILE\.nuget\packages\microsoft.aspnetcore.http.connections.client\11.0.0-dev" -Recurse -Force
+   # then dotnet restore --force

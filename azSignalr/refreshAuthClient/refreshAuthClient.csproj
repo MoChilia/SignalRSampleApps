@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net11 to match the refreshAuthApp server and the locally-built aspnetcore SignalR client. -->
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RefreshAuthClient</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Consumes YOUR locally-built aspnetcore SignalR .NET client (the WithAuthenticationRefresh
+         change). The 11.0.0-dev version and the local feed come from NuGet.config in this folder.
+         Pack it first (see NuGet.config comment), then `dotnet restore`. If your local pack stamps a
+         different suffix, update this version to match the produced .nupkg filename. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="11.0.0-dev" />
+  </ItemGroup>
+</Project>

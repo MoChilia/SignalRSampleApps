@@ -1,8 +1,13 @@
 # Azure SignalR Refresh Auth Sample
 
 A sample that demonstrates the **refresh-auth** scenario from
-[`signalr-refresh-auth.md`](../../../../azure-signalr-specs/specs/signalr-refresh-auth.md),
-covered by Phase 1 of the server-side runtime feature.
+[`signalr-refresh-auth.md`](../../../../azure-signalr-specs/specs/signalr-refresh-auth.md).
+
+The hub opts into the shipped **Default-mode** feature
+(`HttpConnectionDispatcherOptions.EnableAuthenticationRefresh = true`), so the Azure SignalR SDK's
+`AuthRefreshMatcherPolicy` intercepts `{hubUrl}/refresh` and runs the flow in spec §2. This is
+**net11-only** (the option and the SDK's `RefreshHandler` are guarded by `#if NET11_0_OR_GREATER`),
+so the sample targets `net11.0`.
 
 ## What the runtime feature does (Phase 1)
 
@@ -23,87 +28,51 @@ Phase 1 acks: `Ok` on advance, `NotFound` for unknown connections.
 
 ## What this sample shows
 
-This sample exercises **both Management SDK transports** from spec §3 — transient and
-persistent — from a single customer-facing endpoint:
+The **Refresh (/hub/refresh)** button drives the shipped Default-mode path:
 
-```http
-POST /api/refresh?hub={hub}&id={connectionIdOrToken}&mode={transient|persistent}
-Authorization: Bearer {app-token}
+1. The browser mints a fresh app token from `/token` (the IdP stand-in) so its `exp` is the new
+   expiration, then POSTs it to `{hubUrl}/refresh?id={connectionToken}` with
+   `Authorization: Bearer {fresh-app-token}`. The `connectionToken` is captured from the negotiate
+   response by `ConnectionTokenCapturingHttpClient`.
+2. `AddAzureSignalR()` auto-registers `AuthRefreshMatcherPolicy`, which intercepts `/hub/refresh`
+   and dispatches to `RefreshHandler<ChatHub>`: it validates the app token, runs the optional
+   `OnAuthenticationRefresh` gate, and sends a `RefreshAuthMessage` to the runtime — which advances
+   `AuthenticationExpiresOn` in place (**no reconnect**) and returns the post-refresh claims.
+3. The handler mints a refreshed **service** access token and responds
+   `200 OK { accessToken, tokenLifetimeSeconds }`. The browser adopts it for the next (re)connect,
+   and `ChatHub.OnAuthenticationRefreshedAsync` posts a notice on the live connection.
 
-200 OK
-{ "accessToken": "<refreshed-token>", "tokenLifetimeSeconds": 60, "mode": "transient" }
-```
+The hub sets `CloseOnAuthenticationExpiration = true`, so without a refresh the connection is
+aborted at the JWT's `exp`; the refresh advances that deadline in place. A short-lived JWT
+(`AppTokenProvider.DefaultLifetime` = 60 s) makes this easy to observe, and the countdown shows the
+remaining lifetime.
 
-Both modes converge on the same runtime handler inside ASRS —
-`ClientConnectionLifetimeManager.RefreshClientAuthAsync` → `RefreshLocalClientAuthAsync` →
-`SignalRClientConnectionContext.TryRefreshAuthentication`. The transient REST controller
-(`HubProxyV20260701Controller.RefreshConnectionAuth`) builds a `RefreshAuthMessage` and
-forwards it via the message broker; the persistent transport delivers the same message
-over the service connection. So the live connection's `AuthenticationExpiresOn` is
-advanced in place either way — **no reconnect**, no token round-trip from the browser,
-no message loss. After the service confirms, the app server returns
-`{ accessToken, tokenLifetimeSeconds, mode }` so the client's `accessTokenFactory` has a
-fresh token ready for the next (re)connect.
+### Failure mapping
 
-### Mode `transient` (default) — REST data plane
+Matches spec §7:
 
-The app server validates the bearer token via `JwtBearer`, mints a refreshed app token
-(acting as the IdP stand-in), signs an HS256 service token, and POSTs to the ASRS
-data-plane:
-
-```http
-POST {endpoint}/api/hubs/{hub}/connections/{connectionIdOrToken}/:refresh?api-version=2026-07-01
-Authorization: Bearer {service-token}
-Content-Type: application/json
-
-{ "expireTime": "<utc>" }
-```
-
-On `204 No Content` the service has advanced `AuthenticationExpiresOn` for the live
-connection.
-
-### Mode `persistent` — service-protocol tunnel
-
-The app server writes a `RefreshAuthMessage` (service-protocol message type **41**) onto
-the SDK's **existing persistent service connection** for `ChatHub` and awaits the
-matching `AckMessage`:
-
-```text
-Request:  [41, ConnectionIdOrToken, Claims?, ExpireTime, AckId, ExtensionMembers]
-Response: AckMessage(AckId, Status, Message, Payload, ExtensionMembers)
-```
-
-- `Claims` is `null` in v1 (expiration-only update).
-- `AckId` is allocated by the SDK; the value the caller passes is overwritten.
-- `AckStatus.Ok` → 200, `AckStatus.NotFound` → 404, other / timeout → 500.
-
-The SDK-side Default-mode plumbing for `/hub/refresh` is Phase 3 in spec §8 and not yet
-shipped, so the sample reaches into the SDK's internal
-`IServiceConnectionManager<ChatHub>` via reflection to push the message over the same
-service connection that backs `SendUserAsync` / `Clients.User(...)`. This is sample-only
-plumbing meant to demonstrate the persistent transport — production code should use the
-Management SDK's `RefreshAuthAsync` once it ships.
-
-- A short-lived JWT (`AppTokenProvider.DefaultLifetime` = 60 s) drives the
-  close-on-auth-expire behavior.
-- The countdown shows the JWT's remaining lifetime.
-- The chat hub keeps working across the refresh in both modes.
-
-### Failure mapping (`/api/refresh`)
-
-Matches spec §7. Same mapping for both modes:
-
-| Failure                                              | HTTP |
-| ---------------------------------------------------- | ---- |
-| App bearer token missing / invalid / expired         | 401  |
-| ASRS returns `ConnectionNotFound` (REST 404 / `AckStatus.NotFound`) | 404  |
-| ASRS cross-pod / other failure, app server exception, ack timeout   | 500  |
+| Failure                                                          | HTTP |
+| --------------------------------------------------------------- | ---- |
+| App bearer token missing / invalid / expired                    | 401  |
+| `OnAuthenticationRefresh` rejects (`permission_change_rejected`) | 403  |
+| Connection not found (`connection_not_found`)                   | 404  |
+| ASRS / app server error                                         | 500  |
 
 ## Running it
 
-1. Set the Azure SignalR connection string via user secrets or env var. The
-   `/api/refresh` flow requires an **AccessKey-style** connection string (AAD-only
-   connection strings are not supported by this sample's REST signer):
+> **Prerequisite (.NET 11 preview 7 SDK).** The Azure SignalR SDK's `net11.0` build uses the refresh
+> APIs (`EnableAuthenticationRefresh`, `AuthenticationRefreshContext`, `IConnectionUserRefreshFeature`)
+> from the `Microsoft.AspNetCore.App` shared framework. Build/run with a **.NET 11 preview 7 (or later)
+> SDK** — the version pinned by azure-signalr's `global.json` — whose shared framework already contains
+> them; a plain `dotnet build` / `dotnet run` works. (Older preview-6 SDKs fail with `CS0246`.)
+> `Microsoft.AspNetCore.Authentication.JwtBearer` is referenced at `11.0.0-dev` from the local feed in
+> [`NuGet.config`](NuGet.config), since no stable `11.0.0` exists while .NET 11 is in preview.
+>
+> If you hit `CS2012: Cannot open ...AzureSignalRRefreshAuthSample.dll for writing ... used by another
+> process`, a reused MSBuild worker node is holding the output — run `dotnet build-server shutdown`
+> (optionally delete `obj`/`bin`) and rebuild.
+
+1. Set the Azure SignalR connection string via user secrets or env var:
 
    ```pwsh
    dotnet user-secrets set "Azure:SignalR:ConnectionString" "Endpoint=http://localhost;Port=8080;AccessKey=<base64>;Version=1.0;"
@@ -111,15 +80,15 @@ Matches spec §7. Same mapping for both modes:
    $env:Azure__SignalR__ConnectionString = "Endpoint=http://localhost;Port=8080;AccessKey=<base64>;Version=1.0;"
    ```
 
-2. **Enable the service-side feature flag.** The runtime gates `/:refresh` behind the
-   `EnableAuthRefresh` feature flag — if it is off, the service returns
-   `404 Connection ... is not found` for the REST call even when the connection exists.
-   For a local `OSSServices-SignalR-Service` runtime, set:
+2. **Enable the service-side feature flag.** The runtime gates the refresh path behind the
+   `EnableAuthenticationRefresh` feature flag — if it is off, the service returns
+   `404 connection_not_found` even when the connection exists. For a local
+   `OSSServices-SignalR-Service` runtime, set:
 
    ```jsonc
    // appsettings.Development.json
    "Features": {
-     "EnableAuthRefresh": true
+     "EnableAuthenticationRefresh": true
    }
    ```
 
@@ -131,56 +100,29 @@ Matches spec §7. Same mapping for both modes:
 
 4. Open <http://localhost:5121/> in a browser.
 5. Click **Connect**. The countdown shows the JWT's remaining lifetime.
-6. Before the countdown hits zero, click one of the refresh buttons:
-   - **Refresh (Transient / REST)** — `POST /api/refresh?mode=transient` → service `/:refresh`.
-   - **Refresh (Persistent / service connection)** — `POST /api/refresh?mode=persistent` →
-     `RefreshAuthMessage` over the SDK's existing persistent service connection.
+6. Before the countdown hits zero, click **Refresh (/hub/refresh)** — the browser mints a fresh
+   app token and POSTs it to `{hubUrl}/refresh`, which the SDK intercepts and applies in place.
 
 ## Files
 
 | File                                | Purpose                                                                          |
 |-------------------------------------|----------------------------------------------------------------------------------|
-| `Program.cs`                        | Web host, JWT auth, `/token`, `/api/refresh` (transient + persistent), hub mapping. |
+| `Program.cs`                        | Web host, JWT auth, `/token`, hub mapping with `EnableAuthenticationRefresh`.     |
 | `AppTokenProvider.cs`               | HS256 JWT issuance with configurable lifetime.                                   |
 | `ChatHub.cs`                        | Authorized hub; exposes `WhoAmIExp` for diagnostics.                             |
 | `NameIdentifierUserIdProvider.cs`   | Maps NameIdentifier / `sub` to SignalR user id.                                  |
-| `wwwroot/index.html` + `client.js`  | UI with countdown + Transient and Persistent refresh buttons.                    |
-
-
-## Notes on the `/api/refresh` endpoint
-
-- Matches the spec customer-facing shape: `POST /api/refresh?hub={hub}&id={connectionIdOrToken}&mode={transient|persistent}`
-  with `Authorization: Bearer {app-token}`, returns `{ accessToken, tokenLifetimeSeconds, mode }`.
-- The endpoint is `[Authorize]`d; the `JwtBearer` middleware validates the app token before
-  the handler runs. The handler then mints a refreshed app token for the validated identity
-  and uses its `exp` as the `expireTime` sent to ASRS.
-- The data-plane REST path (transient mode) uses the hub name **as registered with the service**,
-  which the Azure SignalR server SDK lowercases (see `DefaultServiceEndpointGenerator.GetPrefixedHubName`).
-  The sample lowercases the `?hub=...` query value before building the URL —
-  `/api/hubs/chathub/...`.
-- The `id` query parameter accepts the connection token for negotiate v1 and connection id for negotiate v0 the service resolves token → id via `GetConnectionIdByToken`.
-- Transient mode: the bearer token sent to **the service** is an HS256 JWT signed with the
-  connection string's `AccessKey`, with `aud` set to the resource URL.
-- Persistent mode: the message rides the SDK's already-authenticated service connection, so
-  there is no per-request service token to sign.
-- For locally-hosted runtimes the connection string typically uses a separate `Port=`
-  segment (e.g. `Port=8888`). The sample merges it into the endpoint authority before
-  building the REST URL (transient mode only), otherwise the call defaults to port 80/443.
-- Negotiate-time advertisement: `/token` returns `tokenLifetimeSeconds` so the client
-  knows when to call `/api/refresh`.
+| `wwwroot/index.html` + `client.js`  | UI with countdown + the `/hub/refresh` button.                                   |
 
 ## Differences vs `authApp`
 
 - JWT lifetime defaults to 60 s (vs 1 h) so the refresh flow is observable.
 - `ServiceOptions.AccessTokenLifetime` is matched to the app JWT lifetime.
 - `JwtBearer.ClockSkew = TimeSpan.Zero` so the short token is honored as-issued.
-- Adds spec-conformant `POST /api/refresh?hub={hub}&id={connectionIdOrToken}&mode={transient|persistent}`
-  that validates the bearer token, applies the refresh on the live connection in one of two
-  ways (REST data plane or persistent service-connection `RefreshAuthMessage`), and returns
-  `{ accessToken, tokenLifetimeSeconds, mode }`.
+- Opts into the shipped Default-mode refresh feature (`EnableAuthenticationRefresh` +
+  `OnAuthenticationRefresh`); the SDK intercepts `{hubUrl}/refresh`.
 - `/token` advertises `tokenLifetimeSeconds` (spec §6).
 - Enables `CloseOnAuthenticationExpiration` on the hub mapping so the service arms its
   heartbeat-based abort at the JWT's `exp`.
-- Adds a UI countdown and two refresh buttons (transient + persistent).
+- Adds a UI countdown and a `/hub/refresh` button.
 - `ChatHub.WhoAmIExp` returns the `exp` from the principal currently seen by the hub
   pipeline — handy for verifying which token the service used on a given invocation.
