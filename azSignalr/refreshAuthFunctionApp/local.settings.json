@@ -1,0 +1,19 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "// AzureWebJobsStorage": "Required by the upstream [SignalRTrigger]. Use Azurite locally (run 'azurite'). Not needed if you remove UpstreamFunctions.cs.",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "// AzureWebJobsSecretStorageType": "Store the host's webhook secret/key on disk instead of Blob storage, so the SignalR trigger works without a real storage account.",
+    "AzureWebJobsSecretStorageType": "Files",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+
+    "// NOTE": "Env-var config uses '__' which maps to ':' in IConfiguration. Set your ASRS connection string below.",
+    "Azure__SignalR__ConnectionString": "Endpoint=http://localhost;Port=8080;AccessKey=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGH;Version=1.0;",
+
+    "// AzureSignalRConnectionString": "Same value, flat key. Required by the optional upstream [SignalRTrigger]/[SignalROutput] (Functions SignalR binding).",
+    "AzureSignalRConnectionString": "Endpoint=http://localhost;Port=8080;AccessKey=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGH;Version=1.0;",
+
+    "// ServiceTransportType": "Transient (REST data plane, default) or Persistent (service-protocol tunnel).",
+    "Azure__SignalR__ServiceTransportType": "Transient"
+  }
+}

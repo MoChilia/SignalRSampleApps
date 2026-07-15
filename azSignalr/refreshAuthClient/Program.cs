@@ -143,7 +143,10 @@ while (true)
         continue;
     }
 
-    await connection.InvokeAsync("SendToAll", line);
+    // Fire-and-forget send. Serverless upstream forwards this as a "messages" event to the
+    // [SignalRTrigger] (which then broadcasts). InvokeAsync would block waiting for a completion the
+    // upstream trigger does not return; SendAsync is correct for both serverless and Default mode.
+    await connection.SendAsync("SendToAll", line);
 }
 
 await connection.DisposeAsync();

@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "logging": {
+    "logLevel": {
+      "Default": "Information",
+      "Microsoft.Azure.SignalR": "Information"
+    }
+  },
+  "extensions": {
+    "http": {
+      "routePrefix": ""
+    }
+  }
+}

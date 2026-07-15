@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- In-process .NET Functions (v4). The Microsoft.Azure.WebJobs.Extensions.SignalRService
+         extension is an in-process WebJobs extension, so it is consumed by this model (not the
+         isolated worker). net8.0 is the in-process target for Functions v4. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RefreshWebJobsFunctionApp</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="4.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference the locally-built WebJobs SignalR extension so this sample exercises the new
+         [SignalRRefresh] binding and the tokenLifetimeSeconds advertisement on [SignalRConnectionInfo].
+         This sample must be built with these GLOBAL properties (they must flow to restore, so they
+         cannot be AdditionalProperties on the reference; use build.ps1 or pass them on the command line):
+           -p:UseLocalSignalRSdk=true            -> the extension resolves the local azure-signalr
+                                                    Management SDK (which has RefreshAuthAsync /
+                                                    GetConnectionClaimsAsync).
+           -p:EnableSourceControlManagerQueries=false
+           -p:EnableSourceLink=false
+           -p:DeterministicSourcePaths=false      -> bypass an unrelated azure-sdk-for-net build-infra
+                                                    issue (old Microsoft.Build.Tasks.Git cannot read a
+                                                    newer git repo format).
+         Because the local Microsoft.Azure.SignalR project multi-targets net11.0, build with a
+         net11-capable SDK (the default SDK on this machine is preview net11). See README.md. -->
+    <ProjectReference Include="..\..\..\azure-sdk-for-net\sdk\signalr\Microsoft.Azure.WebJobs.Extensions.SignalRService\src\Microsoft.Azure.WebJobs.Extensions.SignalRService.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="host.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="local.settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

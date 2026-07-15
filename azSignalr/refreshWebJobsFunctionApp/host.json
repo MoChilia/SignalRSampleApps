@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "logging": {
+    "logLevel": {
+      "default": "Information",
+      "Microsoft.Azure.WebJobs.Extensions.SignalRService": "Information"
+    }
+  },
+  "extensions": {
+    "http": {
+      "routePrefix": "api"
+    }
+  }
+}

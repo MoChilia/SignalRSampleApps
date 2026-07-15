@@ -68,10 +68,10 @@ public partial class Program
         builder.Services.AddSingleton<IUserIdProvider, NameIdentifierUserIdProvider>();
         // Optional server->client "Tick" broadcaster for the message-loss demo. With auth refresh the
         // stream is gapless; without it the connection is aborted at token expiry and the client reports
-        // dropped ticks until WithAutomaticReconnect re-establishes. Enabled by default; toggle via config:
-        //   dotnet run -- --Tick:Enabled=false        (or env: Tick__Enabled=false)
+        // dropped ticks until WithAutomaticReconnect re-establishes. Disabled by default; toggle via config:
+        //   dotnet run -- --Tick:Enabled=true         (or env: Tick__Enabled=true)
         //   dotnet run -- --Tick:IntervalSeconds=1    (broadcast interval, default 2)
-        if (builder.Configuration.GetValue("Tick:Enabled", true))
+        if (builder.Configuration.GetValue("Tick:Enabled", false))
         {
             builder.Services.AddHostedService<TickBroadcaster>();
         }
