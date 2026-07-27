@@ -28,6 +28,18 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    [Function("SampleConfig")]
+    public IActionResult SampleConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sample-config")] HttpRequest request) =>
+        new OkObjectResult(new
+        {
+            mode = "Serverless",
+            serviceTransportType = Environment.GetEnvironmentVariable("Azure__SignalR__ServiceTransportType") ?? "Transient",
+            scenarios = typeof(AuthRefreshScenario)
+                .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .Select(field => field.GetRawConstantValue()),
+        });
+
     [Function("Token")]
     public async Task<IActionResult> Token(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "token")] HttpRequest request)
@@ -40,15 +52,27 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
             return new BadRequestObjectResult(new { error = "userId and role are required." });
         }
 
-        var token = tokens.CreateToken(body.UserId.Trim(), body.Role.Trim());
-        var lifetimeSeconds = (int)Math.Max(0, (token.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
+        var lifetime = body.LifetimeSeconds is { } seconds
+            ? TimeSpan.FromSeconds(Math.Max(1, seconds))
+            : AppTokenProvider.DefaultLifetime;
+        var token = tokens.CreateToken(
+            body.UserId.Trim(),
+            body.Role.Trim(),
+            NormalizeScenario(body.Scenario),
+            lifetime,
+            body.IncludeExpiration);
+        var lifetimeSeconds = token.ExpiresAt is { } expiration
+            ? Math.Max(0, (int)(expiration - DateTimeOffset.UtcNow).TotalSeconds)
+            : (int?)null;
 
         return new OkObjectResult(new
         {
             accessToken = token.AccessToken,
             tokenType = "Bearer",
+            expiresAt = token.ExpiresAt?.ToUnixTimeSeconds(),
             expiresIn = lifetimeSeconds,
             tokenLifetimeSeconds = lifetimeSeconds,
+            scenario = NormalizeScenario(body.Scenario),
         });
     }
 
@@ -61,34 +85,40 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
             return new UnauthorizedResult();
         }
 
-        var lifetime = app.ExpiresAt - DateTimeOffset.UtcNow;
-        if (lifetime <= TimeSpan.Zero)
+        if (app.ExpiresAt <= DateTimeOffset.UtcNow)
         {
             return new UnauthorizedResult();
         }
 
         var hubContext = signalR.ChatHubContext;
-        var negotiate = await hubContext.NegotiateWithTokenLifetimeAsync(
-            new NegotiationOptions
-            {
-                UserId = app.UserId,
-                Claims = BuildClaims(app),
-                // Align the service-token lifetime with the app token so the connection's auth deadline tracks the
-                // app token; CloseOnAuthenticationExpiration aborts it if refresh does not happen. The advertised
-                // tokenLifetimeSeconds equals TokenLifetime (= app-token remaining lifetime), computed by the SDK.
-                TokenLifetime = lifetime,
-                CloseOnAuthenticationExpiration = true,
-            },
-            request.HttpContext.RequestAborted);
-
-        // Standard SignalR redirect-negotiate response. tokenLifetimeSeconds (computed by the SDK) tells the
-        // client when to schedule its refresh (mirrors Default mode).
-        return new OkObjectResult(new
+        var options = BuildNegotiationOptions(app);
+        try
         {
-            url = negotiate.Url,
-            accessToken = negotiate.AccessToken,
-            tokenLifetimeSeconds = negotiate.TokenLifetimeSeconds,
-        });
+            if (app.Scenario == AuthRefreshScenario.OrdinaryNegotiate)
+            {
+                var ordinary = await hubContext.NegotiateAsync(options, request.HttpContext.RequestAborted);
+                return new OkObjectResult(new { url = ordinary.Url, accessToken = ordinary.AccessToken });
+            }
+
+            var negotiate = await hubContext.NegotiateWithTokenLifetimeAsync(
+                app.Scenario == AuthRefreshScenario.LifetimeApiNullOptions ? null! : options,
+                request.HttpContext.RequestAborted);
+
+            return new OkObjectResult(new
+            {
+                url = negotiate.Url,
+                accessToken = negotiate.AccessToken,
+                tokenLifetimeSeconds = negotiate.TokenLifetimeSeconds,
+            });
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            return new BadRequestObjectResult(new { error = "expired_authentication_deadline", detail = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return new BadRequestObjectResult(new { error = "invalid_negotiation_options", detail = ex.Message });
+        }
     }
 
     [Function("Broadcast")]
@@ -112,6 +142,42 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
             request.HttpContext.RequestAborted);
 
         return new OkObjectResult(new { broadcast = true });
+    }
+
+    [Function("Claims")]
+    public async Task<IActionResult> Claims(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = "hub/claims")] HttpRequest request)
+    {
+        var connectionToken = request.Query["id"].FirstOrDefault();
+        if (string.IsNullOrEmpty(connectionToken))
+        {
+            return new BadRequestObjectResult(new { error = "missing_connection_token" });
+        }
+
+        if (!TryGetBearer(request, out var appToken) || !tokens.TryValidate(appToken, out _))
+        {
+            return new UnauthorizedResult();
+        }
+
+        try
+        {
+            var result = await signalR.ChatHubContext.GetConnectionClaimsAsync(
+                connectionToken,
+                request.HttpContext.RequestAborted);
+            return new OkObjectResult(new
+            {
+                claims = result.Claims.Select(claim => new { claim.Type, claim.Value }),
+            });
+        }
+        catch (AzureSignalRException ex)
+        {
+            return new ObjectResult(new { error = "claims_failed", detail = ex.Message })
+            {
+                StatusCode = ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                    ? StatusCodes.Status404NotFound
+                    : StatusCodes.Status400BadRequest,
+            };
+        }
     }
 
     [Function("Refresh")]
@@ -151,17 +217,17 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
 
         try
         {
+            var options = BuildRefreshOptions(app);
             var result = await hubContext.RefreshConnectionAuthenticationAsync(
                 connectionToken,
-                app.ExpiresAt,
-                BuildClaims(app),
+                options,
                 request.HttpContext.RequestAborted);
 
             logger.LogInformation(
                 "RefreshConnectionAuthenticationAsync(connectionToken={ConnectionToken}) returned tokenLifetimeSeconds={TokenLifetimeSeconds}, accessToken={AccessToken}",
                 connectionToken,
                 result.TokenLifetimeSeconds,
-                result.AccessToken);
+                "<redacted>");
 
             logger.LogInformation(
                 "Refreshed service access token payload: {Payload}",
@@ -188,6 +254,69 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
                 StatusCode = status,
             };
         }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            return new BadRequestObjectResult(new { error = "invalid_expiration", detail = ex.Message });
+        }
+    }
+
+    private static NegotiationOptions BuildNegotiationOptions(AppPrincipal app)
+    {
+        var authenticationExpiresOn = app.Scenario switch
+        {
+            AuthRefreshScenario.RenewalOnly => null,
+            AuthRefreshScenario.DeadlineOmitted => null,
+            AuthRefreshScenario.DeadlineMaxValue => DateTimeOffset.MaxValue,
+            AuthRefreshScenario.PastNegotiationDeadline => DateTimeOffset.UtcNow.AddSeconds(-1),
+            AuthRefreshScenario.NonUtcExpiration => app.ExpiresAt?.ToOffset(TimeSpan.FromHours(8)),
+            _ => app.ExpiresAt,
+        };
+
+        return new NegotiationOptions
+        {
+            UserId = app.UserId,
+            Claims = BuildClaims(app),
+            TokenLifetime = app.Scenario switch
+            {
+                AuthRefreshScenario.TokenMaximumWins => TimeSpan.FromSeconds(30),
+                AuthRefreshScenario.RenewalOnly => TimeSpan.FromSeconds(60),
+                _ => TimeSpan.FromHours(1),
+            },
+            AuthenticationExpiresOn = authenticationExpiresOn,
+            EnableAuthenticationRefresh = app.Scenario is not (
+                AuthRefreshScenario.LifetimeApiDisabled or AuthRefreshScenario.OrdinaryNegotiate),
+            CloseOnAuthenticationExpiration = app.Scenario is not (
+                AuthRefreshScenario.CloseDisabled
+                or AuthRefreshScenario.CloseDisabledMaxValue
+                or AuthRefreshScenario.RenewalOnly),
+        };
+    }
+
+    private static RefreshConnectionAuthenticationOptions BuildRefreshOptions(AppPrincipal app)
+    {
+        var (expiration, claims) = app.Scenario switch
+        {
+            AuthRefreshScenario.ExpirationOnly => (app.ExpiresAt, null),
+            AuthRefreshScenario.ClaimsOnly => (null, BuildClaims(app)),
+            AuthRefreshScenario.RenewalOnly => (null, null),
+            AuthRefreshScenario.NonUtcExpiration => (app.ExpiresAt?.ToOffset(TimeSpan.FromHours(8)), BuildClaims(app)),
+            AuthRefreshScenario.MaxValueExpiration => (DateTimeOffset.MaxValue, BuildClaims(app)),
+            AuthRefreshScenario.CloseDisabledMaxValue => (DateTimeOffset.MaxValue, BuildClaims(app)),
+            AuthRefreshScenario.PastRefreshExpiration => (DateTimeOffset.UtcNow.AddSeconds(-1), BuildClaims(app)),
+            _ => (app.ExpiresAt, BuildClaims(app)),
+        };
+
+        return new RefreshConnectionAuthenticationOptions
+        {
+            AuthenticationExpiresOn = expiration,
+            Claims = claims,
+            TokenLifetime = app.Scenario switch
+            {
+                AuthRefreshScenario.TokenMaximumWins => TimeSpan.FromSeconds(30),
+                AuthRefreshScenario.RenewalOnly => TimeSpan.FromSeconds(60),
+                _ => TimeSpan.FromHours(1),
+            },
+        };
     }
 
     // Claims put into the service token. NameIdentifier must equal the negotiate UserId so the runtime's
@@ -198,7 +327,11 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
             new Claim(ClaimTypes.NameIdentifier, app.UserId),
             new Claim("role", app.Role ?? "user"),
             new Claim("marker", app.Marker ?? Guid.NewGuid().ToString("N")),
+            new Claim("scenario", app.Scenario),
         };
+
+    private static string NormalizeScenario(string? scenario) =>
+        string.IsNullOrWhiteSpace(scenario) ? AuthRefreshScenario.Standard : scenario.Trim().ToLowerInvariant();
 
     private static bool TryGetBearer(HttpRequest request, out string? token)
     {        token = null;
@@ -247,6 +380,15 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
 
         [JsonPropertyName("role")]
         public string? Role { get; init; }
+
+        [JsonPropertyName("scenario")]
+        public string? Scenario { get; init; }
+
+        [JsonPropertyName("lifetimeSeconds")]
+        public int? LifetimeSeconds { get; init; }
+
+        [JsonPropertyName("includeExpiration")]
+        public bool IncludeExpiration { get; init; } = true;
     }
 
     private sealed record BroadcastRequest

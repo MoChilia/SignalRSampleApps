@@ -109,4 +109,24 @@ public static class UpstreamFunctions
 
         return marker;
     }
+
+    [Function("WhoAmIState")]
+    public static object OnWhoAmIState(
+        [SignalRTrigger(SignalRService.HubName, "messages", "WhoAmIState")]
+        SignalRInvocationContext invocationContext) =>
+        new
+        {
+            invocationContext.ConnectionId,
+            UserIdentifier = invocationContext.UserId,
+            Name = invocationContext.UserId,
+            IsAuthenticated = !string.IsNullOrEmpty(invocationContext.UserId),
+            AuthenticationType = "Serverless",
+            Role = GetClaim(invocationContext, "role"),
+            Marker = GetClaim(invocationContext, "marker"),
+            Scenario = GetClaim(invocationContext, "scenario"),
+            ExpiresAt = 0,
+        };
+
+    private static string? GetClaim(SignalRInvocationContext context, string name) =>
+        context.Claims != null && context.Claims.TryGetValue(name, out var value) ? value.ToString() : null;
 }

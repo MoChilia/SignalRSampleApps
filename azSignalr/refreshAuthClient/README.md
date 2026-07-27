@@ -1,5 +1,7 @@
 # Refresh Auth Client (.NET)
 
+<!-- markdownlint-disable MD060 -->
+
 A minimal console client that connects to the [`refreshAuthApp`](../refreshAuthApp) server and
 exercises the **Default-mode authentication refresh** feature of the ASP.NET Core SignalR .NET
 client (`WithAuthenticationRefresh` + `{hubUrl}/refresh`).
@@ -36,7 +38,7 @@ The server needs an **AccessKey-style** Azure SignalR connection string and the 
 cd ..\refreshAuthApp
 dotnet user-secrets set "Azure:SignalR:ConnectionString" "Endpoint=http://localhost;Port=8080;AccessKey=<base64>;Version=1.0;"
 dotnet run --project AzureSignalRRefreshAuthSample.csproj
-```
+```text
 
 The server listens on <http://localhost:5121> and maps the hub at `/hub`.
 
@@ -47,12 +49,39 @@ cd ..\refreshAuthClient
 C:\Users\shiyingchen\aspnetcore\.dotnet\dotnet.exe run -- http://localhost:5121 alice user
 ```
 
-Arguments (all optional): `run -- <serverBaseUrl> <userId> <role>` (defaults:
-`http://localhost:5121 alice user`).
+Arguments (all optional):
+`run -- <serverBaseUrl> <userId> <role> <transport> <autorefresh> <authmode> <lifetimeSeconds> <expiration> <scenario> <autoreconnect>`
+(defaults: `http://localhost:5121 alice user ws on token <server-default> on standard on`).
+
+- `transport` = `ws` | `sse` | `lp` | `all`
+- `autorefresh` = `on` | `off`
+- `authmode` = `token` (JWT bearer, default) | `cookie` (cookie auth) | `none` (anonymous failure)
+- `lifetimeSeconds` overrides the app token lifetime for negotiate and refresh.
+- `expiration` = `on` | `off`; `off` issues a JWT without `exp` (token mode only).
+- `scenario` selects a Serverless Management SDK negotiate/refresh case. Default mode ignores this
+  extra token-request property. See the Function sample README for the supported values.
+- `autoreconnect` = `on` | `off`; `off` leaves the connection closed after a transport drop instead
+  of renegotiating. It is independent of `autorefresh`.
+
+### Cookie auth mode
+
+`authmode cookie` uses cookie authentication instead of the bearer `/token` flow: the client POSTs
+`/login` once to obtain an auth cookie and reuses it for negotiate/refresh (via a shared
+`CookieContainer`). Cookie auth sets the ticket's `ExpiresUtc` itself, so the server needs no
+`OnTokenValidated` hook. Run it with:
+
+```pwsh
+C:\Users\shiyingchen\aspnetcore\.dotnet\dotnet.exe run -- http://localhost:5121 alice user ws on cookie
+```
+
+Because the cookie's claims (including `marker`) are fixed for the cookie's lifetime, cookie-mode
+refresh is **expiration-only** — the deadline advances via the cookie's sliding expiration, but the
+claim set is unchanged, so `ChatHub.OnAuthenticationRefreshedAsync` does **not** fire (unlike token
+mode, whose per-mint `marker` makes every refresh a claims-changed refresh).
 
 ## What you'll see
 
-```
+```text
 [token] minted app token (expiresIn=60s)
 Connecting to http://localhost:5121/hub as 'alice' (user)...
 [recv] server: Connected through Azure SignalR Service as alice.
@@ -63,7 +92,7 @@ Commands: type a message to broadcast (SendToAll), '/refresh' to force a refresh
 - **Auto-refresh:** demo tokens live ~60s and the client is configured with
   `RefreshBeforeExpiration = 20s`, so ~40s after connect you'll see:
 
-  ```
+  ```text
   [token] minted app token (expiresIn=60s)      # fresh app token for /hub/refresh
   [recv] server: Authentication refreshed on the live connection; still alice.  # ChatHub.OnAuthenticationRefreshedAsync
   [refresh] succeeded at HH:mm:ss; new lifetime=00:01:00
@@ -74,6 +103,70 @@ Commands: type a message to broadcast (SendToAll), '/refresh' to force a refresh
 - **Manual refresh:** type `/refresh` to call `RefreshAuthenticationAsync()` immediately.
 - **Broadcast:** type any other text to invoke `SendToAll`; it echoes back via `ReceiveMessage`.
 - **Exit:** press Enter on an empty line (or Ctrl+C).
+
+The client logs every negotiate/refresh status, advertised `tokenLifetimeSeconds`, decoded service
+JWT `exp - iat`, UTC+8 `iat`/`exp` timestamps, and audience. `/status` prints the live hub principal, effective host configuration,
+last negotiate/refresh summary, and the latest successful service access token's decoded claims. It
+keeps the raw Unix `iat`/`exp` values and adds `iatUtcPlus8`/`expUtcPlus8` display fields. It does not
+retain or print the raw signed token.
+
+## Scenario commands
+
+These commands cover the locally reachable Default-mode rows in the E2E checklist:
+
+| Command | Scenario / expected result |
+|---|---|
+| `/refresh` | Normal claims + expiration refresh; connection ID remains unchanged. |
+| `/marker`, then `/refresh`, then `/marker` | Per-mint marker changes and `OnAuthenticationRefreshedAsync` fires. |
+| `/refresh-as alice blocked` | Gate rejection: `403 permission_change_rejected`; state remains unchanged. |
+| `/refresh-as bob user` | Same-user enforcement: `403 permission_change_rejected`. |
+| `/refresh-as alice admin`, then `/status` | Same-user claim update and role/name claim-type fidelity. |
+| `/refresh-lifetime 120`, then `/refresh-lifetime 30` | Monotonic deadline: the second stale expiration does not regress the effective deadline. |
+| `/refresh-no-exp`, then `/status` | Claims-only refresh: sends no new app expiration (`MaxValue` sentinel internally), preserving the deadline. |
+| `/refresh-invalid` | Invalid app bearer token: `401 invalid_token`. |
+| `/parallel 2` | Concurrent refresh serialization for the same connection. |
+| `/probe get` | Non-POST refresh request: `405`. |
+| `/probe missing-id` | POST without connection token: `400 missing_connection_token`. |
+| `/probe no-auth` | POST without app credentials: `401 invalid_token`. |
+| `/probe invalid-auth` | POST with malformed app token: `401 invalid_token`. |
+| `/probe unknown` | Unknown connection token: `404 connection_not_found`. |
+| `/claims` | Serverless: call the sample's Management SDK claims endpoint and print current claims/deadline. |
+| `/status` | Live identity, role, marker, app `exp`, host switches, service JWT lifetime, and decoded service-token claims. |
+
+Run cookie mode for expiration-only refresh (the marker remains unchanged):
+
+```pwsh
+dotnet run -- http://localhost:5121 alice user ws on cookie
+```
+
+Run without an app-auth expiration; the negotiated service token uses the host's configured maximum:
+
+```pwsh
+dotnet run -- http://localhost:5121 alice user ws on token 60 off
+```
+
+Run anonymous negotiation or disable auto-refresh to cover their respective failure/close paths:
+
+```pwsh
+dotnet run -- http://localhost:5121 alice user ws on none
+dotnet run -- http://localhost:5121 alice user ws off token
+```
+
+Disable both authentication refresh and automatic reconnect to observe the terminal `Closed` state
+at the authentication deadline:
+
+```pwsh
+dotnet run -- http://localhost:5121 alice user ws off token 60 on standard off
+```
+
+Transport continuity uses the same client with `ws`, `sse`, or `lp`. Start the host with
+`--Tick:Enabled=true`; refresh on should be gapless, while refresh off reports `[LOST]` after
+close/reconnect. Host-level option matrices (`Enabled`, close, gate, app lifetime, service lifetime)
+are listed in the [server README](../refreshAuthApp/README.md#running-it).
+
+Multi-endpoint ownership/fan-out, cross-pod routed updates, Windows identity, negotiate v0, AAD data
+actions, and the runtime feature flag cannot be synthesized by these single-endpoint local samples;
+they still require the environments identified in the E2E checklist.
 
 ## How the two credential planes work here
 

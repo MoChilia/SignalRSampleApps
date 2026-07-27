@@ -26,10 +26,15 @@ public sealed class AppTokenProvider
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly byte[] _key = Encoding.UTF8.GetBytes(SigningKey);
 
-    public TokenResult CreateToken(string userId, string role, TimeSpan? lifetime = null)
+    public TokenResult CreateToken(
+        string userId,
+        string role,
+        string scenario,
+        TimeSpan? lifetime = null,
+        bool includeExpiration = true)
     {
         var now = DateTimeOffset.UtcNow;
-        var expires = now.Add(lifetime ?? DefaultLifetime);
+        DateTimeOffset? expires = includeExpiration ? now.Add(lifetime ?? DefaultLifetime) : null;
 
         var header = new Dictionary<string, object> { ["alg"] = "HS256", ["typ"] = "JWT" };
         var payload = new Dictionary<string, object>
@@ -39,11 +44,16 @@ public sealed class AppTokenProvider
             ["sub"] = userId,
             ["name"] = userId,
             ["role"] = role,
+            ["scenario"] = scenario,
             // A per-token marker makes it obvious in logs that a *new* token advanced the connection.
             ["marker"] = Guid.NewGuid().ToString("N"),
             ["iat"] = now.ToUnixTimeSeconds(),
-            ["exp"] = expires.ToUnixTimeSeconds(),
         };
+
+        if (expires is { } expiration)
+        {
+            payload["exp"] = expiration.ToUnixTimeSeconds();
+        }
 
         var encodedHeader = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(header, SerializerOptions));
         var encodedPayload = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(payload, SerializerOptions));
@@ -93,14 +103,20 @@ public sealed class AppTokenProvider
                 return false;
             }
 
-            var exp = root.TryGetProperty("exp", out var expElement) ? expElement.GetInt64() : 0;
-            var expiresAt = DateTimeOffset.FromUnixTimeSeconds(exp);
+            DateTimeOffset? expiresAt = root.TryGetProperty("exp", out var expElement)
+                ? DateTimeOffset.FromUnixTimeSeconds(expElement.GetInt64())
+                : null;
             if (expiresAt <= DateTimeOffset.UtcNow)
             {
                 return false;
             }
 
-            principal = new AppPrincipal(userId!, GetString(root, "role"), GetString(root, "marker"), expiresAt);
+            principal = new AppPrincipal(
+                userId!,
+                GetString(root, "role"),
+                GetString(root, "marker"),
+                GetString(root, "scenario") ?? AuthRefreshScenario.Standard,
+                expiresAt);
             return true;
         }
         catch (JsonException)
@@ -137,7 +153,32 @@ public sealed class AppTokenProvider
 }
 
 /// <summary>A minted token plus its absolute expiry.</summary>
-public readonly record struct TokenResult(string AccessToken, DateTimeOffset ExpiresAt);
+public readonly record struct TokenResult(string AccessToken, DateTimeOffset? ExpiresAt);
 
 /// <summary>The validated app-plane identity extracted from an incoming app token.</summary>
-public readonly record struct AppPrincipal(string UserId, string? Role, string? Marker, DateTimeOffset ExpiresAt);
+public readonly record struct AppPrincipal(
+    string UserId,
+    string? Role,
+    string? Marker,
+    string Scenario,
+    DateTimeOffset? ExpiresAt);
+
+public static class AuthRefreshScenario
+{
+    public const string Standard = "standard";
+    public const string ExpirationOnly = "expiration-only";
+    public const string ClaimsOnly = "claims-only";
+    public const string RenewalOnly = "renewal-only";
+    public const string NonUtcExpiration = "non-utc-expiration";
+    public const string MaxValueExpiration = "max-value-expiration";
+    public const string PastRefreshExpiration = "past-refresh-expiration";
+    public const string PastNegotiationDeadline = "past-negotiate-deadline";
+    public const string TokenMaximumWins = "token-maximum-wins";
+    public const string CloseDisabled = "close-disabled";
+    public const string CloseDisabledMaxValue = "close-disabled-max-value";
+    public const string DeadlineOmitted = "deadline-omitted";
+    public const string DeadlineMaxValue = "deadline-max-value";
+    public const string LifetimeApiDisabled = "lifetime-api-disabled";
+    public const string LifetimeApiNullOptions = "lifetime-api-null-options";
+    public const string OrdinaryNegotiate = "ordinary-negotiate";
+}

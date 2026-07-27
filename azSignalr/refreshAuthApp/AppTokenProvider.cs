@@ -18,10 +18,10 @@ public sealed class AppTokenProvider
     /// Creates a JWT with a short <c>exp</c> claim. The refresh-auth Phase 1 feature is designed
     /// to extend this <c>exp</c> on the running connection without forcing a reconnect.
     /// </summary>
-    public TokenResult CreateToken(string userId, string role, TimeSpan? lifetime = null)
+    public TokenResult CreateToken(string userId, string role, TimeSpan? lifetime = null, bool includeExpiration = true)
     {
         var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.Add(lifetime ?? DefaultLifetime);
+        DateTimeOffset? expiresAt = includeExpiration ? now.Add(lifetime ?? DefaultLifetime) : null;
 
         var header = new Dictionary<string, object>
         {
@@ -39,9 +39,13 @@ public sealed class AppTokenProvider
             // exercises the claims-changed path in auth refresh: the runtime pushes the new principal to
             // the app server and Hub.OnAuthenticationRefreshedAsync runs on every refresh.
             ["marker"] = Guid.NewGuid().ToString("N"),
-            ["iat"] = now.ToUnixTimeSeconds(),
-            ["exp"] = expiresAt.ToUnixTimeSeconds()
+            ["iat"] = now.ToUnixTimeSeconds()
         };
+
+        if (expiresAt is { } expiration)
+        {
+            payload["exp"] = expiration.ToUnixTimeSeconds();
+        }
 
         var encodedHeader = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(header));
         var encodedPayload = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(payload));
@@ -61,4 +65,4 @@ public sealed class AppTokenProvider
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }
 
-public readonly record struct TokenResult(string AccessToken, DateTimeOffset ExpiresAt);
+public readonly record struct TokenResult(string AccessToken, DateTimeOffset? ExpiresAt);

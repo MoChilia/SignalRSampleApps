@@ -32,6 +32,21 @@ public sealed class ChatHub : Hub
     /// </summary>
     public string WhoAmIMarker() => Context.User?.FindFirst("marker")?.Value ?? "(none)";
 
+    public object WhoAmIState() => new
+    {
+        Context.ConnectionId,
+        Context.UserIdentifier,
+        Name = Context.User?.Identity?.Name,
+        IsAuthenticated = Context.User?.Identity?.IsAuthenticated == true,
+        AuthenticationType = Context.User?.Identity?.AuthenticationType,
+        NameClaimType = (Context.User?.Identity as System.Security.Claims.ClaimsIdentity)?.NameClaimType,
+        RoleClaimType = (Context.User?.Identity as System.Security.Claims.ClaimsIdentity)?.RoleClaimType,
+        IsInRole = Context.User?.IsInRole(Context.User?.FindFirst("role")?.Value ?? string.Empty) == true,
+        Role = Context.User?.FindFirst("role")?.Value,
+        Marker = Context.User?.FindFirst("marker")?.Value,
+        ExpiresAt = WhoAmIExp(),
+    };
+
     public override Task OnConnectedAsync() =>
         Clients.Caller.SendAsync(
             "ReceiveMessage",

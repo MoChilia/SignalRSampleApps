@@ -1,5 +1,7 @@
 # Azure SignalR Refresh Auth Sample
 
+<!-- markdownlint-disable MD060 -->
+
 A sample that demonstrates the **refresh-auth** scenario from
 [`signalr-refresh-auth.md`](../../../../azure-signalr-specs/specs/signalr-refresh-auth.md).
 
@@ -58,6 +60,23 @@ Matches spec §7:
 | Connection not found (`connection_not_found`)                   | 404  |
 | ASRS / app server error                                         | 500  |
 
+### Authentication modes
+
+The server accepts **either** JWT bearer (the `/token` flow above) **or** cookie auth, via a combined
+authorization policy, so the `refreshAuthClient` can run in `token` or `cookie` mode:
+
+- **JWT bearer** (default): the client mints a fresh app token from `/token` and presents it on
+  `/negotiate` and `{hubUrl}/refresh`. The server copies the token's `exp` onto the auth ticket's
+  `ExpiresUtc` (`OnTokenValidated`) so negotiate can advertise `tokenLifetimeSeconds`.
+- **Cookie** (`POST /login`): the client logs in once for an auth cookie and reuses it. Cookie auth
+  sets `ExpiresUtc` itself (`ExpireTimeSpan` / `SignInAsync`) — no `OnTokenValidated` needed — and
+   `SlidingExpiration` re-issues the cookie on `{hubUrl}/refresh`. By default that renewal updates only
+   the response cookie; the current request's authentication result still has the old `ExpiresUtc`.
+   The sample's `OnValidatePrincipal` therefore advances the current properties too, allowing the
+   Azure SignalR refresh handler to send the renewed deadline to ASRS and mint a full-lifetime service
+   token. Since the cookie's `marker` is fixed for its lifetime, this is an **expiration-only** refresh
+   (claims unchanged), so `OnAuthenticationRefreshedAsync` is not raised.
+
 ## Running it
 
 > **Prerequisite (.NET 11 preview 7 SDK).** The Azure SignalR SDK's `net11.0` build uses the refresh
@@ -98,18 +117,52 @@ Matches spec §7:
    dotnet run --project AzureSignalRRefreshAuthSample.csproj
    ```
 
+   The host behavior is configurable from command-line configuration, so the same sample covers the
+   refresh gate, close behavior, and app/service-token lifetime matrix without source edits:
+
+   | Option | Default | Purpose |
+   |---|---:|---|
+   | `--AuthRefresh:Enabled=true/false` | `true` | Toggles `EnableAuthenticationRefresh`. |
+   | `--AuthRefresh:CloseOnAuthenticationExpiration=true/false` | `true` | Toggles heartbeat closure independently from refresh/token capping. |
+   | `--AuthRefresh:GateEnabled=true/false` | `true` | Adds or removes `OnAuthenticationRefresh`; role `blocked` is rejected when enabled. |
+   | `--AuthRefresh:AppTokenLifetimeSeconds=<n>` | `60` | Sets the default app-auth deadline. |
+   | `--AuthRefresh:ServiceTokenLifetimeSeconds=<n>` | `60` | Sets `ServiceOptions.AccessTokenLifetime`, the service-token maximum. |
+
+   Examples:
+
+   ```pwsh
+   # App auth wins: negotiate service JWT is capped at about 60 seconds.
+   dotnet run -- --AuthRefresh:AppTokenLifetimeSeconds=60 --AuthRefresh:ServiceTokenLifetimeSeconds=3600
+
+   # Service-token maximum wins while the app-auth deadline remains later.
+   dotnet run -- --AuthRefresh:AppTokenLifetimeSeconds=3600 --AuthRefresh:ServiceTokenLifetimeSeconds=60
+
+   # Refresh disabled: negotiate uses the configured service-token lifetime and advertises no refresh lifetime.
+   dotnet run -- --AuthRefresh:Enabled=false --AuthRefresh:ServiceTokenLifetimeSeconds=300
+
+   # Refresh remains enabled but the live connection is not closed at the app-auth deadline.
+   dotnet run -- --AuthRefresh:CloseOnAuthenticationExpiration=false
+
+   # Demonstrate operation without PreviousUser lookup / application refresh gate.
+   dotnet run -- --AuthRefresh:GateEnabled=false
+   ```
+
 4. Open <http://localhost:5121/> in a browser.
 5. Click **Connect**. The countdown shows the JWT's remaining lifetime.
 6. Before the countdown hits zero, click **Refresh (/hub/refresh)** — the browser mints a fresh
    app token and POSTs it to `{hubUrl}/refresh`, which the SDK intercepts and applies in place.
 
+`GET /sample-config` returns the effective switches and lifetimes for client diagnostics. `POST /token`
+and `POST /login` also accept optional `lifetimeSeconds`; `/token` accepts `includeExpiration=false`
+to issue an authenticated JWT without `exp`, exercising the no-app-deadline path.
+
 ## Files
 
 | File                                | Purpose                                                                          |
 |-------------------------------------|----------------------------------------------------------------------------------|
-| `Program.cs`                        | Web host, JWT auth, `/token`, hub mapping with `EnableAuthenticationRefresh`.     |
+| `Program.cs`                        | Web host, JWT + cookie auth, `/token` + `/login`, hub mapping with `EnableAuthenticationRefresh`. |
 | `AppTokenProvider.cs`               | HS256 JWT issuance with configurable lifetime.                                   |
-| `ChatHub.cs`                        | Authorized hub; exposes `WhoAmIExp` for diagnostics.                             |
+| `ChatHub.cs`                        | Authorized hub; exposes `WhoAmIExp`, `WhoAmIMarker`, and `WhoAmIState` diagnostics. |
 | `NameIdentifierUserIdProvider.cs`   | Maps NameIdentifier / `sub` to SignalR user id.                                  |
 | `wwwroot/index.html` + `client.js`  | UI with countdown + the `/hub/refresh` button.                                   |
 
