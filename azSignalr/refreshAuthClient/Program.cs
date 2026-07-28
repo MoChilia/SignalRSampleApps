@@ -8,30 +8,73 @@ using System.Text.Json;
 // Minimal .NET client for the refreshAuthApp server. Exercises the locally-built aspnetcore
 // SignalR client's Default-mode auth refresh (WithAuthenticationRefresh + {hubUrl}/refresh).
 //
-// Usage: dotnet run [serverBaseUrl] [userId] [role] [transport] [autorefresh] [authmode] [lifetimeSeconds] [expiration] [scenario] [autoreconnect]
+// Usage: dotnet run -- [--server-url URL] [--user-id USER] [--role ROLE] [--transport TRANSPORT]
+//   [--auto-refresh on|off] [--auth-mode MODE] [--lifetime-seconds SECONDS]
+//   [--expiration on|off] [--scenario SCENARIO] [--auto-reconnect on|off] [--negotiate-version 0|1]
 //   transport    = ws | sse | lp | all   (default ws)
 //   autorefresh  = on | off               (default on)
 //   authmode     = token | cookie | none  (default token)
 //   expiration   = on | off               (default on; token mode only)
 //   autoreconnect = on | off              (default on)
+//   negotiateVersion = 0 | 1              (default client behavior when omitted)
 //   e.g. dotnet run http://localhost:5121 alice user sse off cookie
 
-var serverBaseUrl = (args.Length > 0 ? args[0] : "http://localhost:5121").TrimEnd('/');
-var userId = args.Length > 1 ? args[1] : "alice";
-var role = args.Length > 2 ? args[2] : "user";
-var transportArg = (args.Length > 3 ? args[3] : "ws").ToLowerInvariant();
-var autoRefresh = !(args.Length > 4 && (
-    string.Equals(args[4], "off", StringComparison.OrdinalIgnoreCase) ||
-    string.Equals(args[4], "false", StringComparison.OrdinalIgnoreCase) ||
-    string.Equals(args[4], "no", StringComparison.OrdinalIgnoreCase)));
-var authMode = (args.Length > 5 ? args[5] : "token").ToLowerInvariant();
-var configuredLifetimeSeconds = args.Length > 6 && int.TryParse(args[6], out var lifetimeSeconds)
+Dictionary<string, string>? namedArguments;
+try
+{
+    namedArguments = ParseNamedArguments(args);
+}
+catch (ArgumentException ex)
+{
+    Console.WriteLine(ex.Message);
+    Console.WriteLine("Run with --help to see supported arguments.");
+    return;
+}
+
+if (namedArguments?.ContainsKey("help") == true)
+{
+    PrintUsage();
+    return;
+}
+
+string? GetArgument(string name, int position, string? defaultValue = null)
+{
+    if (namedArguments is null)
+    {
+        return args.Length > position ? args[position] : defaultValue;
+    }
+    return namedArguments.TryGetValue(name, out var value) ? value : defaultValue;
+}
+
+var serverBaseUrl = GetArgument("server-url", 0, "http://localhost:5121")!.TrimEnd('/');
+var userId = GetArgument("user-id", 1, "alice")!;
+var role = GetArgument("role", 2, "user")!;
+var transportArg = GetArgument("transport", 3, "ws")!.ToLowerInvariant();
+var autoRefresh = !IsOff(GetArgument("auto-refresh", 4, "on")!);
+var authMode = GetArgument("auth-mode", 5, "token")!.ToLowerInvariant();
+var lifetimeArgument = GetArgument("lifetime-seconds", 6);
+var configuredLifetimeSeconds = lifetimeArgument is not null && int.TryParse(lifetimeArgument, out var lifetimeSeconds)
     ? lifetimeSeconds
     : (int?)null;
-var includeExpiration = !(args.Length > 7 && IsOff(args[7]));
-var scenario = args.Length > 8 ? args[8].ToLowerInvariant() : "standard";
-var autoReconnect = !(args.Length > 9 && IsOff(args[9]));
-var hubUrl = $"{serverBaseUrl}/hub";
+if (lifetimeArgument is not null && configuredLifetimeSeconds is null)
+{
+    Console.WriteLine("lifetime-seconds must be an integer.");
+    return;
+}
+var includeExpiration = !IsOff(GetArgument("expiration", 7, "on")!);
+var scenario = GetArgument("scenario", 8, "standard")!.ToLowerInvariant();
+var autoReconnect = !IsOff(GetArgument("auto-reconnect", 9, "on")!);
+var negotiateVersionArgument = GetArgument("negotiate-version", 10);
+var negotiateVersion = negotiateVersionArgument is not null && int.TryParse(negotiateVersionArgument, out var parsedNegotiateVersion)
+    && parsedNegotiateVersion is 0 or 1
+        ? parsedNegotiateVersion
+        : (int?)null;
+if (negotiateVersionArgument is not null && negotiateVersion is null)
+{
+    Console.WriteLine("negotiateVersion must be 0 or 1.");
+    return;
+}
+var hubUrl = $"{serverBaseUrl}/hub" + (negotiateVersion.HasValue ? $"?negotiateVersion={negotiateVersion}" : string.Empty);
 var refreshUserId = userId;
 var refreshRole = role;
 var refreshLifetimeSeconds = configuredLifetimeSeconds;
@@ -353,6 +396,79 @@ static bool IsOff(string value) =>
     || value.Equals("false", StringComparison.OrdinalIgnoreCase)
     || value.Equals("no", StringComparison.OrdinalIgnoreCase);
 
+static Dictionary<string, string>? ParseNamedArguments(string[] arguments)
+{
+    if (!arguments.Any(argument => argument.StartsWith("--", StringComparison.Ordinal)))
+    {
+        return null;
+    }
+
+    var supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "server-url", "user-id", "role", "transport", "auto-refresh", "auth-mode",
+        "lifetime-seconds", "expiration", "scenario", "auto-reconnect", "negotiate-version",
+    };
+    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    for (var index = 0; index < arguments.Length; index++)
+    {
+        var argument = arguments[index];
+        if (!argument.StartsWith("--", StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"Positional argument '{argument}' cannot be mixed with named arguments.");
+        }
+
+        var option = argument[2..];
+        if (option.Equals("help", StringComparison.OrdinalIgnoreCase))
+        {
+            result["help"] = string.Empty;
+            continue;
+        }
+
+        var separator = option.IndexOf('=');
+        var name = separator >= 0 ? option[..separator] : option;
+        if (!supported.Contains(name))
+        {
+            throw new ArgumentException($"Unknown argument '--{name}'.");
+        }
+        if (result.ContainsKey(name))
+        {
+            throw new ArgumentException($"Argument '--{name}' was specified more than once.");
+        }
+
+        string value;
+        if (separator >= 0)
+        {
+            value = option[(separator + 1)..];
+        }
+        else if (++index < arguments.Length && !arguments[index].StartsWith("--", StringComparison.Ordinal))
+        {
+            value = arguments[index];
+        }
+        else
+        {
+            throw new ArgumentException($"Argument '--{name}' requires a value.");
+        }
+
+        result[name] = value;
+    }
+    return result;
+}
+
+static void PrintUsage() => Console.WriteLine(
+    "Usage: dotnet run -- [options]\n" +
+    "  --server-url <url>           App server base URL (default: http://localhost:5121)\n" +
+    "  --user-id <id>               User ID (default: alice)\n" +
+    "  --role <role>                User role (default: user)\n" +
+    "  --transport <ws|sse|lp|all>  Transport (default: ws)\n" +
+    "  --auto-refresh <on|off>       Automatic auth refresh (default: on)\n" +
+    "  --auth-mode <token|cookie|none> Authentication mode (default: token)\n" +
+    "  --lifetime-seconds <seconds> App token lifetime override\n" +
+    "  --expiration <on|off>         Include app-token expiration (default: on)\n" +
+    "  --scenario <name>             Serverless scenario (default: standard)\n" +
+    "  --auto-reconnect <on|off>     Automatic reconnect (default: on)\n" +
+    "  --negotiate-version <0|1>     Negotiate protocol version\n" +
+    "  --help                        Show this help");
+
 static void PrintCommands() => Console.WriteLine(
     "Commands: message=broadcast; /refresh; /refresh-as <user> <role>; " +
     "/refresh-lifetime <seconds>; /refresh-no-exp; /refresh-invalid; /parallel [count]; " +
@@ -488,7 +604,9 @@ internal sealed class SignalRResponseInspectorHandler(ResponseInspector inspecto
                 : string.Empty;
             var connectionToken = root.TryGetProperty("connectionToken", out var connectionTokenProperty)
                 ? connectionTokenProperty.GetString()
-                : null;
+                : root.TryGetProperty("connectionId", out var connectionIdProperty)
+                    ? connectionIdProperty.GetString()
+                    : null;
             return (
                 $"{path} => {(int)statusCode}; tokenLifetimeSeconds={advertisedLifetime}; jwtLifetime={jwtLifetime}{error}",
                 connectionToken,

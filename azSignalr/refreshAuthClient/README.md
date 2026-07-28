@@ -46,22 +46,23 @@ The server listens on <http://localhost:5121> and maps the hub at `/hub`.
 
 ```pwsh
 cd ..\refreshAuthClient
-C:\Users\shiyingchen\aspnetcore\.dotnet\dotnet.exe run -- http://localhost:5121 alice user
+C:\Users\shiyingchen\aspnetcore\.dotnet\dotnet.exe run -- --server-url http://localhost:5121 --user-id alice --role user
 ```
 
-Arguments (all optional):
-`run -- <serverBaseUrl> <userId> <role> <transport> <autorefresh> <authmode> <lifetimeSeconds> <expiration> <scenario> <autoreconnect>`
-(defaults: `http://localhost:5121 alice user ws on token <server-default> on standard on`).
+Run `dotnet run -- --help` for all options. Named arguments support both `--name value` and
+`--name=value`; the legacy positional form remains supported for existing scripts.
 
-- `transport` = `ws` | `sse` | `lp` | `all`
-- `autorefresh` = `on` | `off`
-- `authmode` = `token` (JWT bearer, default) | `cookie` (cookie auth) | `none` (anonymous failure)
-- `lifetimeSeconds` overrides the app token lifetime for negotiate and refresh.
-- `expiration` = `on` | `off`; `off` issues a JWT without `exp` (token mode only).
-- `scenario` selects a Serverless Management SDK negotiate/refresh case. Default mode ignores this
+- `--transport` = `ws` | `sse` | `lp` | `all`
+- `--auto-refresh` = `on` | `off`
+- `--auth-mode` = `token` (JWT bearer, default) | `cookie` (cookie auth) | `none` (anonymous failure)
+- `--lifetime-seconds` overrides the app token lifetime for negotiate and refresh.
+- `--expiration` = `on` | `off`; `off` issues a JWT without `exp` (token mode only).
+- `--scenario` selects a Serverless Management SDK negotiate/refresh case. Default mode ignores this
   extra token-request property. See the Function sample README for the supported values.
-- `autoreconnect` = `on` | `off`; `off` leaves the connection closed after a transport drop instead
+- `--auto-reconnect` = `on` | `off`; `off` leaves the connection closed after a transport drop instead
   of renegotiating. It is independent of `autorefresh`.
+- `--negotiate-version` = `0` | `1`; omitted uses the SignalR client's default. Version 0 establishes
+  with `connectionId` and is useful for verifying that token-keyed refresh/claims APIs return 404.
 
 ### Cookie auth mode
 
@@ -136,27 +137,27 @@ These commands cover the locally reachable Default-mode rows in the E2E checklis
 Run cookie mode for expiration-only refresh (the marker remains unchanged):
 
 ```pwsh
-dotnet run -- http://localhost:5121 alice user ws on cookie
+dotnet run -- --server-url http://localhost:5121 --user-id alice --role user --transport ws --auto-refresh on --auth-mode cookie
 ```
 
 Run without an app-auth expiration; the negotiated service token uses the host's configured maximum:
 
 ```pwsh
-dotnet run -- http://localhost:5121 alice user ws on token 60 off
+dotnet run -- --server-url http://localhost:5121 --user-id alice --role user --transport ws --auto-refresh on --auth-mode token --lifetime-seconds 60 --expiration off
 ```
 
 Run anonymous negotiation or disable auto-refresh to cover their respective failure/close paths:
 
 ```pwsh
-dotnet run -- http://localhost:5121 alice user ws on none
-dotnet run -- http://localhost:5121 alice user ws off token
+dotnet run -- --server-url http://localhost:5121 --user-id alice --role user --transport ws --auto-refresh on --auth-mode none
+dotnet run -- --server-url http://localhost:5121 --user-id alice --role user --transport ws --auto-refresh off --auth-mode token
 ```
 
 Disable both authentication refresh and automatic reconnect to observe the terminal `Closed` state
 at the authentication deadline:
 
 ```pwsh
-dotnet run -- http://localhost:5121 alice user ws off token 60 on standard off
+dotnet run -- --server-url http://localhost:5121 --user-id alice --role user --transport ws --auto-refresh off --auth-mode token --lifetime-seconds 60 --expiration on --scenario standard --auto-reconnect off
 ```
 
 Transport continuity uses the same client with `ws`, `sse`, or `lp`. Start the host with

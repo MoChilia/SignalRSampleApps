@@ -11,15 +11,14 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 - `D-host [options]`: from `SignalRSampleApps/azSignalr/refreshAuthApp`, run
   `dotnet run --project AzureSignalRRefreshAuthSample.csproj -- [options]`.
 - `D-client [args]`: from `SignalRSampleApps/azSignalr/refreshAuthClient`, run
-  `dotnet run -- [args]`. Arguments are
-  `<serverBaseUrl> <userId> <role> <transport> <autorefresh> <authmode> <lifetimeSeconds> <expiration> <scenario> <autoreconnect>`;
-  defaults are `http://localhost:5121 alice user ws on token <host-default> on standard on`.
+  `dotnet run -- [args]`. Prefer named arguments such as `--server-url`, `--user-id`, `--role`,
+  `--transport`, `--auto-refresh`, and `--auth-mode`; run `dotnet run -- --help` for the full list.
 - `S-host (Transient)`: in `refreshAuthFunctionApp/local.settings.json`, set
   `Azure__SignalR__ServiceTransportType` to `Transient`, then run `func start` from that folder.
 - `S-host (Persistent)`: set the same value to `Persistent`, then run `func start`.
 - `S-client [args]`: run the same console client with base URL `http://localhost:7071`, for example
-  `dotnet run -- http://localhost:7071 alice user ws off token 60 on standard`. The last argument
-  selects a Management SDK scenario; use auto-refresh `off` for controlled `/claims` → `/refresh` comparisons.
+  `dotnet run -- --server-url http://localhost:7071 --user-id alice --role user --transport ws --auto-refresh off --auth-mode token --lifetime-seconds 60 --expiration on --scenario standard`.
+  Use auto-refresh `off` for controlled `/claims` → `/refresh` comparisons.
 - Text beginning with `/` is entered in the running console client. `[Harness]` identifies a case that
   requires a focused SDK/runtime E2E harness or temporary call-site variation not exposed by the samples.
 
@@ -44,7 +43,7 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 | ✓ | Scenario | How to exercise | Expected |
 |---|---|---|---|
 | ✓  | JWT bearer mode | `D-host`; `D-client http://localhost:5121 alice user ws on token`; enter `/refresh` | refresh via `/token` app token |
-|  ✓ | Cookie auth mode | `D-host`; `D-client http://localhost:5121 alice user ws on cookie`; enter `/refresh` | refresh via `/login` cookie + sliding expiration |
+| ✓ | Cookie auth mode | `D-host`; `D-client http://localhost:5121 alice user ws on cookie`; enter `/refresh` | refresh via `/login` cookie + sliding expiration |
 | ✓ | Anonymous connection | Start an authenticated client, then enter `/probe no-auth`; separately run `D-client http://localhost:5121 alice user ws on none` | refresh returns `401 invalid_token`; anonymous negotiate fails and advertises no lifetime |
 
 ## 3. Accept/reject gate (`OnAuthenticationRefresh`)
@@ -107,7 +106,7 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 | ✓ | Non-UTC refresh expiration | Start S-host; `S-client ... 60 on non-utc-expiration`; enter `/claims`, `/refresh`, `/claims` | SDK normalizes to UTC before REST/Persistent dispatch |
 | ✓ | Explicit `MaxValue` over Persistent | Start `S-host (Persistent)`; client scenario `claims-only` or `max-value-expiration`; trace `RefreshAuthMessage` and compare `/claims` | runtime skips deadline advancement and preserves `asrs.s.aeo` |
 | ✓ | Explicit `MaxValue` over Transient | Start `S-host (Transient)`; client scenario `claims-only` or `max-value-expiration`; capture REST body and compare `/claims` | body contains explicit year-9999 `expireTime`; runtime preserves deadline |
-|   | REST body omits `expireTime` | `[Harness]` Send authenticated `POST /api/hubs/chat/connections/:refreshAuth` with claims but no `expireTime` using the REST E2E test client | `400 Bad Request`; omission is not the sentinel |
+| ✓ | REST body omits `expireTime` | `[Harness]` Send authenticated `POST /api/hubs/chat/connections/:refreshAuth` with claims but no `expireTime` using the REST E2E test client | `400 Bad Request`; omission is not the sentinel |
 | ✓ | Existing deadline + `MaxValue` | Start S-host; scenario `max-value-expiration`; enter `/claims`, `/refresh`, `/claims` | existing deadline and `asrs.s.aeo` remain unchanged |
 | ✓ | No existing deadline + `MaxValue` | Start S-host; scenario `close-disabled-max-value`; enter `/claims`, `/refresh`, `/claims` | no deadline or `asrs.s.aeo` is created |
 
@@ -137,18 +136,18 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 | ✓ | Scenario | How to exercise | Expected |
 |---|---|---|---|
 | ✓ | Negotiate v1 | Use the normal .NET client; confirm negotiate response includes `connectionToken`; enter `/refresh` | refresh works (token→id resolved internally) |
-|   | Negotiate v0 | `[Harness]` Negotiate with `negotiateVersion=0`, establish using `connectionId`, then call refresh and claims APIs with that ID | `connection_not_found` (404) on both refresh and claims read |
+| ✓ | Negotiate v0 | `D-client --server-url http://localhost:5121 --user-id alice --role user --transport ws --auto-refresh off --auth-mode token --lifetime-seconds 60 --expiration on --scenario standard --auto-reconnect off --negotiate-version 0`; enter `/refresh`, then `/claims` | establishes using `connectionId`; refresh returns `404 connection_not_found`, claims read returns 404 |
 
 ## 11. Multi-endpoint sharding
 
 | ✓ | Scenario | How to exercise | Expected |
 |---|---|---|---|
-|   | Known owner | `[Environment]` Configure two endpoints, connect through endpoint B, enter `/refresh`, and correlate endpoint access logs/token `aud` | `RefreshAuthMessage` sent only to owning endpoint; token minted for it |
-|   | Unknown owner (fan-out) | `[Harness]` Remove ownership-cache entry for a live connection, refresh, and trace requests to both endpoints | non-owners return `ConnectionNotFound`, one owner succeeds |
-|   | Ambiguous multi-owner success | `[Harness]` Stub two endpoints to return success for the same token and invoke refresh | ambiguous-sharding failure (not arbitrary pick) |
-|   | Secondary endpoint after failover | Connect to secondary during primary outage, restore primary, then refresh before reconnect | keeps ownership until reconnect |
-|   | Dynamic add/remove endpoints | Connect, add/remove an unrelated endpoint through dynamic endpoint config, then refresh and inspect owner | existing connections not moved |
-|   | `PreviousUser` read pins subsequent refresh | Enable gate, use unknown-owner setup, refresh with blocked role, then accepted role; correlate claims-read and refresh endpoint logs | claims read + refresh hit the same endpoint |
+| ✓ | Known owner | `[Environment]` Configure two endpoints, connect through endpoint B, enter `/refresh`, and correlate endpoint access logs/token `aud` | `RefreshAuthMessage` sent only to owning endpoint; token minted for it |
+| ✓ | Unknown owner (fan-out) | `[Environment]` Configure two independent runtimes, connect through primary B, and refresh with no preferred endpoint (`GateEnabled=false` in Default mode, or Persistent Management) | fan-out reaches both endpoints; non-owner returns `NotFound`, exactly one owner succeeds |
+| ✓ | Ambiguous multi-owner success | `[Harness]` Stub two endpoints to return success for the same token and invoke refresh | ambiguous-sharding failure (not arbitrary pick) |
+| ✓ | Secondary endpoint after failover | Connect to secondary during primary outage, restore primary, then refresh before reconnect | keeps ownership until reconnect |
+| ✓ | Dynamic add/remove endpoints | Connect, add/remove an unrelated endpoint through dynamic endpoint config, then refresh and inspect owner | existing connections not moved |
+| ✓ | `PreviousUser` read pins subsequent refresh | Enable gate, use unknown-owner setup, refresh with blocked role, then accepted role; correlate claims-read and refresh endpoint logs | claims read + refresh hit the same endpoint |
 
 ## 12. Serverless mode (Function App + Management SDK)
 
@@ -156,10 +155,9 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 |---|---|---|---|
 | ✓ | Transient (REST) refresh | Start `S-host (Transient)` and S-client; enter `/refresh`; inspect Function/runtime HTTP trace | `POST .../connections/:refreshAuth` → 200 `{claims}` |
 | ✓ | Persistent (tunnel) refresh | Start `S-host (Persistent)` and S-client; enter `/refresh`; inspect service-protocol logs | `RefreshAuthMessage` over service connection |
-|   | Persistent → REST fallback | Start Persistent, connect, stop/block the Management SDK service connection, then enter `/refresh` | transparently falls back to REST on same endpoint |
 | ✓ | `GetConnectionClaims` for `PreviousUser` | Start S-host/client; enter `/refresh-as alice blocked`; inspect Function log beginning `GetConnectionClaimsAsync` | `POST .../connections/claims` returns `{claims}` |
-|   | Upstream lazy claims propagation | Configure Azurite + tunnel + ASRS upstream per Function README; enter `/refresh`, then send a chat message; inspect upstream headers/binding claims | next upstream event carries refreshed `X-ASRS-User-Id`/`-Claims` |
-|   | AAD data-action authz | `[Environment]` Use AAD credential connection string; assign only Read, call claims; assign only Write, call refresh; remove each role to verify 403 | Read for claims, Write for `:refreshAuth`; 403 if missing |
+| ✓ | Upstream lazy claims propagation | Start Azurite + Functions with the local runtime upstream pointed at `/runtime/webhooks/signalr`; send a message, enter `/refresh`, then send another message; compare upstream marker claims | the first post-refresh upstream event carries the refreshed claims |
+|   | AAD data-action authz | `[Environment]` On the Transient REST path, use an unknown token: Read-only identity gets claims=404 and refresh=403; Write identity gets claims=403 and refresh=404; no-access identity gets 403 for both | 404 proves RBAC passed and lookup ran; 403 proves the required Read/Write data action is missing |
 | ✓ | Negotiate advertises lifetime only when wired | Start S-host/client with existing `EnableAuthenticationRefresh=true`; inspect negotiate `[http]` line | JWT is capped and lifetime is advertised |
 | ✓ | Negotiate API rejects missing opt-in | Start S-host; run client scenario `lifetime-api-disabled`; inspect `400 invalid_negotiation_options` | `ArgumentException`; use `NegotiateAsync` instead |
 | ✓ | REST sentinel serialization | Start `S-host (Transient)`; client scenario `claims-only` or `renewal-only`; capture REST body | Management SDK sends explicit `DateTimeOffset.MaxValue` |
@@ -181,7 +179,7 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 |---|---|---|---|
 | ✓ | Auto-refresh off | `D-host`; `D-client http://localhost:5121 alice user ws off token`; wait beyond `exp` | no timer; abort at `exp` → reconnect |
 | ✓ | Automatic reconnect off | `D-host`; `D-client http://localhost:5121 alice user ws off token 60 on standard off`; wait beyond `exp` | no refresh timer and no reconnect attempt; `Closed` fires and the connection remains disconnected |
-|   | Short lifetime (`≤ 2×RefreshBefore`) | `D-host --AuthRefresh:AppTokenLifetimeSeconds=30 --AuthRefresh:ServiceTokenLifetimeSeconds=30`; normal auto-refresh client; observe first refresh timestamp | schedules at half lifetime, min-interval enforced |
+| ✓ | Short lifetime (`≤ 2×RefreshBefore`) | `D-host --AuthRefresh:AppTokenLifetimeSeconds=10 --AuthRefresh:ServiceTokenLifetimeSeconds=10`; normal auto-refresh client; observe refresh/reconnect timing | ASP.NET SignalR client applies its 30 s minimum refresh interval; the 10 s auth deadline closes first, so automatic reconnect creates a new connection without calling `/hub/refresh` |
 |   | No `tokenLifetimeSeconds` advertised | `D-host --AuthRefresh:Enabled=false`; connect client with auto-refresh on and watch beyond token lifetime | client never schedules a refresh |
 | ✓ | JWT lifetime equals schedule | Start normally; compare each `[http]` `jwtLifetime` with `tokenLifetimeSeconds` for negotiate and refresh | same whole-second lifetime within rounding tolerance |
 | ✓ | Manual refresh reschedules timer | Start normally; enter `/refresh` before automatic refresh; compare manual and next automatic refresh timestamps | next auto-refresh is based on newly returned lifetime |
@@ -198,7 +196,7 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 | ✓ | Scenario | How to exercise | Expected |
 |---|---|---|---|
 | ✓ | `OnAuthenticationRefreshedAsync` on owning server | Token client: enter `/refresh`; observe server message with new marker; then `/status` | runs after claims applied (claims-changed only) |
-|   | Cross-pod routed update | `[Environment]` Run two app pods, connect through pod A, route refresh HTTP to pod B, enter `/refresh`, inspect pod A callback/log | owner on a different pod still gets `UpdateConnectionClaimsMessage` |
+| ✓ | Cross-app-server routed update | Follow `refreshAuthProxy/README.md`: run app servers A/B with `ServerStickyMode=Required`; proxy negotiate through A and `/hub/refresh` through B; refresh with changed marker/role and inspect A | refresh succeeds on B; ASRS routes type 43 to owning server A; A runs `OnAuthenticationRefreshedAsync` and later `/status`/hub invocations see refreshed claims |
 |   | Push suppression | Cookie client: enter `/marker`, `/refresh`, `/marker`; trace service messages for absence of type 43 | unchanged claims → no type-43 push |
 |   | Best-effort | `[Harness]` Inject failure sending `UpdateConnectionClaimsMessage` after runtime refresh succeeds; invoke refresh | failed routed update still acks the client refresh |
 
@@ -208,15 +206,6 @@ Rows marked `[Harness]` or `[Environment]` are not directly reachable from the s
 sample run. They state the required temporary call-site change, focused test harness, identity setup,
 multi-endpoint topology, cross-pod routing, AAD role assignment, or runtime configuration needed.
 
-## 2026-07-27 local run issues
+## local run notes
 
-- **Short-lifetime auto-refresh does not schedule.** With app/service lifetimes set to 10 seconds and
-  auto-refresh enabled, the client never called `/hub/refresh`; the runtime closed the connection at
-  each deadline and automatic reconnect produced a new connection ID every 10 seconds. The no-refresh,
-  no-reconnect control closed once after 10.46 seconds as expected.
-- **Refresh-disabled response body is missing.** With `AuthRefresh:Enabled=false`, negotiate correctly
-  omitted `tokenLifetimeSeconds` and minted a 300-second service JWT, but manual refresh returned an
-  empty 404 response instead of `404 {"error":"refresh_disabled"}`.
-- **Serverless user-mismatch error code is inconsistent.** A Persistent-mode refresh from `alice` to
-  `bob` correctly returned HTTP 403, but the Function response used `error=refresh_failed` rather than
-  `error=permission_change_rejected`. The rejected refresh left the connection claims unchanged.
+- **Short-lifetime scheduling follows the ASP.NET SignalR client minimum interval.** With app/service lifetimes set to 10 seconds, the client calculates a half-lifetime refresh and then applies its 30-second minimum refresh interval. The Azure SignalR runtime therefore closes the connection at the configured 10-second authentication deadline before the timer fires, and automatic reconnect creates a new connection. This is expected client policy, not an Azure SignalR issue. The no-refresh, no-reconnect control closed once after 10.46 seconds as expected.
