@@ -23,10 +23,12 @@ namespace RefreshAuthFunctionApp;
 /// </summary>
 public static class UpstreamFunctions
 {
+    private const string BindingConnectionStringSetting = "UpstreamAzureSignalRConnectionString";
+
     [Function("SendToAll")]
-    [SignalROutput(HubName = SignalRService.HubName)]
+    [SignalROutput(HubName = SignalRService.HubName, ConnectionStringSetting = BindingConnectionStringSetting)]
     public static SignalRMessageAction OnSendToAll(
-        [SignalRTrigger(SignalRService.HubName, "messages", "SendToAll", parameterNames: new[] { "message" })]
+        [SignalRTrigger(SignalRService.HubName, "messages", "SendToAll", parameterNames: new[] { "message" }, ConnectionStringSetting = BindingConnectionStringSetting)]
         SignalRInvocationContext invocationContext,
         string message,
         FunctionContext context)
@@ -66,7 +68,7 @@ public static class UpstreamFunctions
     // current server-side "marker" claim, so a client can confirm refreshed claims took effect.
     [Function("WhoAmIMarker")]
     public static string OnWhoAmIMarker(
-        [SignalRTrigger(SignalRService.HubName, "messages", "WhoAmIMarker")]
+        [SignalRTrigger(SignalRService.HubName, "messages", "WhoAmIMarker", ConnectionStringSetting = BindingConnectionStringSetting)]
         SignalRInvocationContext invocationContext,
         FunctionContext context)
     {
@@ -112,7 +114,7 @@ public static class UpstreamFunctions
 
     [Function("WhoAmIState")]
     public static object OnWhoAmIState(
-        [SignalRTrigger(SignalRService.HubName, "messages", "WhoAmIState")]
+        [SignalRTrigger(SignalRService.HubName, "messages", "WhoAmIState", ConnectionStringSetting = BindingConnectionStringSetting)]
         SignalRInvocationContext invocationContext) =>
         new
         {

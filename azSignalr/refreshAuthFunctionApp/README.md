@@ -159,8 +159,11 @@ Negotiate / refresh / broadcast are all **server-initiated** and need nothing ex
 calls `connection.SendAsync("SendToAll", msg)` (client→server), serverless mode has no hub server to
 receive it — the Azure SignalR service instead posts that "messages" event to an **upstream** webhook.
 [UpstreamFunctions.cs](UpstreamFunctions.cs) provides that handler via `[SignalRTrigger]` +
-`[SignalROutput]` (the Functions SignalR binding, which reads the flat `AzureSignalRConnectionString`
-setting — already added to `local.settings.json`).
+`[SignalROutput]`. These functions are excluded by default because the Functions SignalR binding only
+supports a single endpoint in Transient mode, while this sample's Management SDK configuration can
+use multiple endpoints in Persistent mode. Build with `-p:EnableUpstreamFunctions=true` only when
+testing upstream against the single endpoint in `UpstreamAzureSignalRConnectionString`; remove the
+`Azure__SignalR__Endpoints__*` settings for that run.
 
 To make it fire you must configure the upstream and, for local runs, expose the webhook publicly:
 
@@ -169,7 +172,7 @@ To make it fire you must configure the upstream and, for local runs, expose the 
    `AzureWebJobsStorage=UseDevelopmentStorage=true` (run **Azurite** locally: `azurite`) and
    `AzureWebJobsSecretStorageType=Files` (keeps the webhook key on disk, no storage account needed).
    Without this you'll see *"SignalR trigger is disabled due to 'AzureWebJobsStorage' ..."*. If you
-   don't need upstream, just delete `UpstreamFunctions.cs` — the HTTP functions need no storage.
+  don't need upstream, leave `EnableUpstreamFunctions` disabled — the HTTP functions need no storage.
 1. **Get the webhook URL.** The Functions SignalR extension serves all triggers at
    `{funcAppBase}/runtime/webhooks/signalr`. Locally that's
    `http://localhost:7071/runtime/webhooks/signalr` (append `?code=<system key>` when a key is required).

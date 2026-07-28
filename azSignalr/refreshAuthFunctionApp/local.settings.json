@@ -8,12 +8,17 @@
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
 
     "// NOTE": "Env-var config uses '__' which maps to ':' in IConfiguration. Set your ASRS connection string below.",
-    "Azure__SignalR__ConnectionString": "Endpoint=http://localhost;Port=8080;AccessKey=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGH;Version=1.0;",
+    "Azure__SignalR__ConnectionString": "",
+
+    "Azure__SignalR__Endpoints__runtimeA:secondary": "Endpoint=http://localhost;Port=8080;AccessKey=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGH;Version=1.0;",
+    "Azure__SignalR__Endpoints__runtimeD:primary": "Endpoint=http://localhost;Port=8280;AccessKey=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGH;Version=1.0;",
 
     "// AzureSignalRConnectionString": "Same value, flat key. Required by the optional upstream [SignalRTrigger]/[SignalROutput] (Functions SignalR binding).",
-    "AzureSignalRConnectionString": "Endpoint=http://localhost;Port=8080;AccessKey=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGH;Version=1.0;",
+    "AzureSignalRConnectionString": "",
+    "// UpstreamAzureSignalRConnectionString": "Dedicated single endpoint for optional SignalRTrigger/SignalROutput bindings; Management SDK endpoints remain independent.",
+    "UpstreamAzureSignalRConnectionString": "Endpoint=http://localhost;Port=8080;AccessKey=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGH;Version=1.0;",
 
     "// ServiceTransportType": "Transient (REST data plane, default) or Persistent (service-protocol tunnel).",
-    "Azure__SignalR__ServiceTransportType": "Transient"
+    "Azure__SignalR__ServiceTransportType": "Persistent"
   }
 }

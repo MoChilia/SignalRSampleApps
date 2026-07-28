@@ -9,7 +9,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>RefreshAuthFunctionApp</RootNamespace>
+    <EnableUpstreamFunctions Condition="'$(EnableUpstreamFunctions)' == ''">false</EnableUpstreamFunctions>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(EnableUpstreamFunctions)' != 'true'">
+    <Compile Remove="UpstreamFunctions.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
