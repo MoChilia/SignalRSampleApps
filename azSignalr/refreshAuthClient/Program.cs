@@ -11,6 +11,7 @@ using System.Text.Json;
 // Usage: dotnet run -- [--server-url URL] [--user-id USER] [--role ROLE] [--transport TRANSPORT]
 //   [--auto-refresh on|off] [--auth-mode MODE] [--lifetime-seconds SECONDS]
 //   [--expiration on|off] [--scenario SCENARIO] [--auto-reconnect on|off] [--negotiate-version 0|1]
+//   [--ignore-refreshed-access-token on|off]
 //   transport    = ws | sse | lp | all   (default ws)
 //   autorefresh  = on | off               (default on)
 //   authmode     = token | cookie | none  (default token)
@@ -65,6 +66,7 @@ var includeExpiration = !IsOff(GetArgument("expiration", 7, "on")!);
 var scenario = GetArgument("scenario", 8, "standard")!.ToLowerInvariant();
 var autoReconnect = !IsOff(GetArgument("auto-reconnect", 9, "on")!);
 var negotiateVersionArgument = GetArgument("negotiate-version", 10);
+var ignoreRefreshedAccessToken = !IsOff(GetArgument("ignore-refreshed-access-token", 11, "off")!);
 var negotiateVersion = negotiateVersionArgument is not null && int.TryParse(negotiateVersionArgument, out var parsedNegotiateVersion)
     && parsedNegotiateVersion is 0 or 1
         ? parsedNegotiateVersion
@@ -141,7 +143,7 @@ var connectionBuilder = new HubConnectionBuilder()
     {
         options.Transports = transports;
         options.HttpMessageHandlerFactory = innerHandler =>
-            new SignalRResponseInspectorHandler(responseInspector) { InnerHandler = innerHandler };
+            new SignalRResponseInspectorHandler(responseInspector, ignoreRefreshedAccessToken) { InnerHandler = innerHandler };
         if (authMode == "cookie")
         {
             // Cookie auth: reuse the auth cookie from /login for negotiate/refresh. Sliding expiration
@@ -407,6 +409,7 @@ static Dictionary<string, string>? ParseNamedArguments(string[] arguments)
     {
         "server-url", "user-id", "role", "transport", "auto-refresh", "auth-mode",
         "lifetime-seconds", "expiration", "scenario", "auto-reconnect", "negotiate-version",
+        "ignore-refreshed-access-token",
     };
     var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     for (var index = 0; index < arguments.Length; index++)
@@ -467,6 +470,7 @@ static void PrintUsage() => Console.WriteLine(
     "  --scenario <name>             Serverless scenario (default: standard)\n" +
     "  --auto-reconnect <on|off>     Automatic reconnect (default: on)\n" +
     "  --negotiate-version <0|1>     Negotiate protocol version\n" +
+    "  --ignore-refreshed-access-token <on|off> Simulate a client that ignores refresh accessToken\n" +
     "  --help                        Show this help");
 
 static void PrintCommands() => Console.WriteLine(
@@ -559,7 +563,7 @@ internal sealed class ResponseInspector
     }
 }
 
-internal sealed class SignalRResponseInspectorHandler(ResponseInspector inspector) : DelegatingHandler
+internal sealed class SignalRResponseInspectorHandler(ResponseInspector inspector, bool ignoreRefreshedAccessToken) : DelegatingHandler
 {
     private static readonly TimeSpan UtcPlus8 = TimeSpan.FromHours(8);
 
@@ -581,7 +585,40 @@ internal sealed class SignalRResponseInspectorHandler(ResponseInspector inspecto
             body);
         inspector.Record(summary, connectionToken, serviceTokenClaims);
         Console.WriteLine($"[http] {summary}");
+
+        if (ignoreRefreshedAccessToken
+            && response.IsSuccessStatusCode
+            && request.RequestUri.AbsolutePath.EndsWith("/refresh", StringComparison.OrdinalIgnoreCase))
+        {
+            response.Content = RemoveAccessToken(response.Content, body);
+            Console.WriteLine("[compat] ignored accessToken from refresh response");
+        }
         return response;
+    }
+
+    private static HttpContent RemoveAccessToken(HttpContent? originalContent, string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!property.NameEquals("accessToken"))
+                {
+                    property.WriteTo(writer);
+                }
+            }
+            writer.WriteEndObject();
+        }
+
+        var content = new ByteArrayContent(stream.ToArray());
+        if (originalContent?.Headers.ContentType is { } contentType)
+        {
+            content.Headers.ContentType = contentType;
+        }
+        return content;
     }
 
     private static (string Summary, string? ConnectionToken, string? ServiceTokenClaims) Summarize(

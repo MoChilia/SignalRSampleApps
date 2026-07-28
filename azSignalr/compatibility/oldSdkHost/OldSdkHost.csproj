@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0-dev" />
+    <PackageReference Include="Microsoft.Azure.SignalR" Version="1.33.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\refreshAuthApp\AppTokenProvider.cs" Link="AppTokenProvider.cs" />
+    <Compile Include="..\..\refreshAuthApp\NameIdentifierUserIdProvider.cs" Link="NameIdentifierUserIdProvider.cs" />
+  </ItemGroup>
+</Project>

@@ -167,11 +167,11 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 
 | ✓ | Scenario | How to exercise | Expected |
 |---|---|---|---|
-|   | Older SDK (no refresh) | Run a pre-refresh Azure SignalR SDK host/client package pair against the updated runtime; inspect negotiate and wait past expiration | no `tokenLifetimeSeconds`; client never calls `/refresh`; live ASRS connection untouched |
-|   | Older client (no `accessToken` field) | Use a client build that ignores refresh `accessToken`; refresh, then force reconnect for WS/SSE/LP after original token expiry | ignores it; WS stays alive (deadline extended), LP/SSE/reconnect lapse at original `exp` |
-|   | Runtime feature flag off | Disable runtime `Features:EnableAuthenticationRefresh`, restart runtime, connect normally, enter `/refresh` | `connection_not_found` even for a live connection |
-|   | Legacy Serverless close fallback | Start S-host; client scenario `deadline-omitted`; decode token and watch close | deadline remains `now + TokenLifetime` (one hour) |
-|   | Explicit Serverless no-expiry override | Start S-host; client scenario `deadline-max-value`; decode token and wait beyond service-token expiry | no close deadline, distinguishing it from omitted value |
+| ✓ | Older SDK (no refresh) | Run `compatibility/oldSdkHost` (SDK 1.33.1) against the updated runtime with a 2-second app token; inspect negotiate and `/status` | no `tokenLifetimeSeconds`; client never calls `/refresh`; same connection remains live past app-token expiration |
+| ✓ | Older client (no `accessToken` field) | Run current host with 10-second service tokens and client `--ignore-refreshed-access-token on`; manually refresh over WS/SSE/LP and observe past original token `exp` | WS stays alive with extended runtime deadline; SSE and LP close on 401 because transport requests retain the expired token |
+| ✓ | Runtime feature flag off | Disable runtime `Features:EnableAuthenticationRefresh`, restart runtime, connect normally, enter `/refresh` | `connection_not_found` even for a live connection |
+| ✓ | Legacy Serverless close fallback | Start S-host; client scenario `deadline-omitted`; decode token and watch close | deadline remains `now + TokenLifetime` (one hour) |
+| ✓ | Explicit Serverless no-expiry override | Start S-host; client scenario `deadline-max-value`; decode token and wait beyond service-token expiry | no close deadline, distinguishing it from omitted value |
 
 ## 14. Client scheduling
 

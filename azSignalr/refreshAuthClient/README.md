@@ -63,6 +63,9 @@ Run `dotnet run -- --help` for all options. Named arguments support both `--name
   of renegotiating. It is independent of `autorefresh`.
 - `--negotiate-version` = `0` | `1`; omitted uses the SignalR client's default. Version 0 establishes
   with `connectionId` and is useful for verifying that token-keyed refresh/claims APIs return 404.
+- `--ignore-refreshed-access-token` = `on` | `off`; `on` strips the additive `accessToken` field
+  before the SignalR client parses a successful refresh response. This simulates a refresh-aware
+  client version that predates refreshed service-token adoption for compatibility testing.
 
 ### Cookie auth mode
 
