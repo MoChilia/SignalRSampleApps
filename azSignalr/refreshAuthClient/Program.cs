@@ -11,7 +11,7 @@ using System.Text.Json;
 // Usage: dotnet run -- [--server-url URL] [--user-id USER] [--role ROLE] [--transport TRANSPORT]
 //   [--auto-refresh on|off] [--auth-mode MODE] [--lifetime-seconds SECONDS]
 //   [--expiration on|off] [--scenario SCENARIO] [--auto-reconnect on|off] [--negotiate-version 0|1]
-//   [--ignore-refreshed-access-token on|off]
+//   [--ignore-refreshed-access-token on|off] [--reconnect-delay-seconds SECONDS]
 //   transport    = ws | sse | lp | all   (default ws)
 //   autorefresh  = on | off               (default on)
 //   authmode     = token | cookie | none  (default token)
@@ -67,6 +67,17 @@ var scenario = GetArgument("scenario", 8, "standard")!.ToLowerInvariant();
 var autoReconnect = !IsOff(GetArgument("auto-reconnect", 9, "on")!);
 var negotiateVersionArgument = GetArgument("negotiate-version", 10);
 var ignoreRefreshedAccessToken = !IsOff(GetArgument("ignore-refreshed-access-token", 11, "off")!);
+var reconnectDelayArgument = GetArgument("reconnect-delay-seconds", 12);
+var reconnectDelaySeconds = reconnectDelayArgument is not null
+    && int.TryParse(reconnectDelayArgument, out var parsedReconnectDelaySeconds)
+    && parsedReconnectDelaySeconds >= 0
+        ? parsedReconnectDelaySeconds
+        : (int?)null;
+if (reconnectDelayArgument is not null && reconnectDelaySeconds is null)
+{
+    Console.WriteLine("reconnect-delay-seconds must be a non-negative integer.");
+    return;
+}
 var negotiateVersion = negotiateVersionArgument is not null && int.TryParse(negotiateVersionArgument, out var parsedNegotiateVersion)
     && parsedNegotiateVersion is 0 or 1
         ? parsedNegotiateVersion
@@ -177,7 +188,15 @@ var connectionBuilder = new HubConnectionBuilder()
 
 if (autoReconnect)
 {
-    connectionBuilder.WithAutomaticReconnect();
+    if (reconnectDelaySeconds is { } delaySeconds)
+    {
+        var delay = TimeSpan.FromSeconds(delaySeconds);
+        connectionBuilder.WithAutomaticReconnect([delay, delay, delay, delay]);
+    }
+    else
+    {
+        connectionBuilder.WithAutomaticReconnect();
+    }
 }
 
 var connection = connectionBuilder.Build();
@@ -228,7 +247,10 @@ connection.Reconnected += connectionId =>
     return Task.CompletedTask;
 };
 
-Console.WriteLine($"Connecting to {hubUrl} as '{userId}' ({role}) over {transports}; autoRefresh={autoRefresh}; autoReconnect={autoReconnect}; auth={authMode}...");
+var reconnectDelayDescription = reconnectDelaySeconds is { } configuredReconnectDelay
+    ? $"{configuredReconnectDelay}s"
+    : "default";
+Console.WriteLine($"Connecting to {hubUrl} as '{userId}' ({role}) over {transports}; autoRefresh={autoRefresh}; autoReconnect={autoReconnect}; reconnectDelay={reconnectDelayDescription}; auth={authMode}...");
 try
 {
     await connection.StartAsync();
@@ -409,7 +431,7 @@ static Dictionary<string, string>? ParseNamedArguments(string[] arguments)
     {
         "server-url", "user-id", "role", "transport", "auto-refresh", "auth-mode",
         "lifetime-seconds", "expiration", "scenario", "auto-reconnect", "negotiate-version",
-        "ignore-refreshed-access-token",
+        "ignore-refreshed-access-token", "reconnect-delay-seconds",
     };
     var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     for (var index = 0; index < arguments.Length; index++)
@@ -469,6 +491,7 @@ static void PrintUsage() => Console.WriteLine(
     "  --expiration <on|off>         Include app-token expiration (default: on)\n" +
     "  --scenario <name>             Serverless scenario (default: standard)\n" +
     "  --auto-reconnect <on|off>     Automatic reconnect (default: on)\n" +
+    "  --reconnect-delay-seconds <n> Delay before each reconnect attempt (default: client policy)\n" +
     "  --negotiate-version <0|1>     Negotiate protocol version\n" +
     "  --ignore-refreshed-access-token <on|off> Simulate a client that ignores refresh accessToken\n" +
     "  --help                        Show this help");

@@ -61,6 +61,9 @@ Run `dotnet run -- --help` for all options. Named arguments support both `--name
   extra token-request property. See the Function sample README for the supported values.
 - `--auto-reconnect` = `on` | `off`; `off` leaves the connection closed after a transport drop instead
   of renegotiating. It is independent of `autorefresh`.
+- `--reconnect-delay-seconds` sets a fixed delay before each automatic reconnect attempt. When
+  omitted, the SignalR client's default reconnect policy is used. A five-second delay makes the
+  message-continuity loss demo deterministic.
 - `--negotiate-version` = `0` | `1`; omitted uses the SignalR client's default. Version 0 establishes
   with `connectionId` and is useful for verifying that token-keyed refresh/claims APIs return 404.
 - `--ignore-refreshed-access-token` = `on` | `off`; `on` strips the additive `accessToken` field
@@ -165,8 +168,10 @@ dotnet run -- --server-url http://localhost:5121 --user-id alice --role user --t
 
 Transport continuity uses the same client with `ws`, `sse`, or `lp`. Start the host with
 `--Tick:Enabled=true`; refresh on should be gapless, while refresh off reports `[LOST]` after
-close/reconnect. Host-level option matrices (`Enabled`, close, gate, app lifetime, service lifetime)
-are listed in the [server README](../refreshAuthApp/README.md#running-it).
+close/reconnect. For the loss control, add `--reconnect-delay-seconds 5`; without an explicit delay,
+the default immediate reconnect can complete between one-second ticks and show no gap. Host-level
+option matrices (`Enabled`, close, gate, app lifetime, service lifetime) are listed in the
+[server README](../refreshAuthApp/README.md#running-it).
 
 Multi-endpoint ownership/fan-out, cross-pod routed updates, Windows identity, negotiate v0, AAD data
 actions, and the runtime feature flag cannot be synthesized by these single-endpoint local samples;

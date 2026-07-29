@@ -202,7 +202,10 @@ works for server→client.
   can mint service tokens (via the Management SDK).
 - `RefreshConnectionAuthenticationAsync(connectionToken, options)` returns `{ accessToken,
   tokenLifetimeSeconds }`. `options.TokenLifetime` is the refreshed service-token maximum;
-  `options.AuthenticationExpiresOn` and `options.Claims` are independently optional. The runtime enforces **same-user** (the refreshed
+  `options.AuthenticationExpiresOn` and `options.Claims` are independently optional. Passing null
+  options preserves both and uses the public options type's one-hour token-lifetime default. A
+  supplied expiration must be in the future and `TokenLifetime` must be positive; the SDK rejects
+  invalid values before contacting ASRS. The runtime enforces **same-user** (the refreshed
   `ClaimTypes.NameIdentifier` must equal the negotiate `UserId`) and strips reserved claims.
 - Refreshed claims propagate to upstream lazily on the next message — there is no proactive
   `refreshed` event.
@@ -214,5 +217,7 @@ works for server→client.
 - Running requires Azure Functions Core Tools. If you only want to compile-check against the local
   Management SDK, `dotnet build` is enough.
 - The optional `SendToAll` upstream trigger uses the Functions SignalR binding (released
-  `Microsoft.Azure.Functions.Worker.Extensions.SignalRService`), which runs in the Functions host
-  alongside the Management SDK code — they are independent, so mixing them is fine.
+  `Microsoft.Azure.Functions.Worker.Extensions.SignalRService`). Although its APIs are independent
+  from the Management SDK, the extension also reads global `Azure:SignalR` configuration and cannot
+  index against multiple endpoints in Transient mode. Keep it disabled in the Persistent
+  multi-endpoint host; enable it only for the documented single-endpoint upstream build.

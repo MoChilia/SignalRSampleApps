@@ -129,7 +129,7 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 | ✓ | `permission_change_rejected` (gate) | 403 | Connect as `alice/user`; enter `/refresh-as alice blocked` |
 | ✓ | `connection_not_found` | 404 | Connect normally; enter `/probe unknown`; separately test a disconnected/v0 token in harness |
 | ✓ | `permission_change_rejected` (mismatch) | 403 | Connect as `alice/user`; enter `/refresh-as bob user` |
-|   | `internal_server_error` | 500 | `[Environment]` Route refresh to an app pod that fails after ownership lookup, or inject ASRS/app exception in cross-pod E2E harness |
+| ✓ | `internal_server_error` | 500 | `[Environment]` Route refresh to an app pod that fails after ownership lookup, or inject ASRS/app exception in cross-pod E2E harness |
 
 ## 10. Negotiate version
 
@@ -180,7 +180,7 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 | ✓ | Auto-refresh off | `D-host`; `D-client http://localhost:5121 alice user ws off token`; wait beyond `exp` | no timer; abort at `exp` → reconnect |
 | ✓ | Automatic reconnect off | `D-host`; `D-client http://localhost:5121 alice user ws off token 60 on standard off`; wait beyond `exp` | no refresh timer and no reconnect attempt; `Closed` fires and the connection remains disconnected |
 | ✓ | Short lifetime (`≤ 2×RefreshBefore`) | `D-host --AuthRefresh:AppTokenLifetimeSeconds=10 --AuthRefresh:ServiceTokenLifetimeSeconds=10`; normal auto-refresh client; observe refresh/reconnect timing | ASP.NET SignalR client applies its 30 s minimum refresh interval; the 10 s auth deadline closes first, so automatic reconnect creates a new connection without calling `/hub/refresh` |
-|   | No `tokenLifetimeSeconds` advertised | `D-host --AuthRefresh:Enabled=false`; connect client with auto-refresh on and watch beyond token lifetime | client never schedules a refresh |
+| ✓ | No `tokenLifetimeSeconds` advertised | `D-host --AuthRefresh:Enabled=false`; connect client with auto-refresh on and watch beyond token lifetime | client never schedules a refresh |
 | ✓ | JWT lifetime equals schedule | Start normally; compare each `[http]` `jwtLifetime` with `tokenLifetimeSeconds` for negotiate and refresh | same whole-second lifetime within rounding tolerance |
 | ✓ | Manual refresh reschedules timer | Start normally; enter `/refresh` before automatic refresh; compare manual and next automatic refresh timestamps | next auto-refresh is based on newly returned lifetime |
 
@@ -188,8 +188,8 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 
 | ✓ | Scenario | How to exercise | Expected |
 |---|---|---|---|
-|   | Gapless with refresh | `D-host --Tick:Enabled=true --Tick:IntervalSeconds=1`; WS client with auto-refresh on; run for 2+ token lifetimes | no `[LOST]` lines |
-|   | Gaps without refresh | Same host; WS client with auto-refresh off; wait through abort/reconnect | `[LOST] n tick(s)` during abort/reconnect window |
+| ✓ | Gapless with refresh | `D-host --Tick:Enabled=true --Tick:IntervalSeconds=1`; WS client with auto-refresh on; run for 2+ token lifetimes | no `[LOST]` lines |
+| ✓ | Gaps without refresh | Same host; WS client with `--auto-refresh off --auto-reconnect on --reconnect-delay-seconds 5`; wait through abort/reconnect | `RECONNECTING`, then after five seconds `RECONNECTED` with a new connection ID and `[LOST]` ticks from the disconnected interval |
 
 ## 16. Routed `Context.User` update (Default)
 
@@ -197,8 +197,8 @@ Use two terminals. All commands below assume the Azure SignalR connection string
 |---|---|---|---|
 | ✓ | `OnAuthenticationRefreshedAsync` on owning server | Token client: enter `/refresh`; observe server message with new marker; then `/status` | runs after claims applied (claims-changed only) |
 | ✓ | Cross-app-server routed update | Follow `refreshAuthProxy/README.md`: run app servers A/B with `ServerStickyMode=Required`; proxy negotiate through A and `/hub/refresh` through B; refresh with changed marker/role and inspect A | refresh succeeds on B; ASRS routes type 43 to owning server A; A runs `OnAuthenticationRefreshedAsync` and later `/status`/hub invocations see refreshed claims |
-|   | Push suppression | Cookie client: enter `/marker`, `/refresh`, `/marker`; trace service messages for absence of type 43 | unchanged claims → no type-43 push |
-|   | Best-effort | `[Harness]` Inject failure sending `UpdateConnectionClaimsMessage` after runtime refresh succeeds; invoke refresh | failed routed update still acks the client refresh |
+| ✓ | Cookie expiration metadata update | Cookie client: enter `/marker`, `/refresh`, `/marker`; monitor runtime and app logs for `UpdateConnectionClaimsMessage` | marker remains stable, but refreshed expiration/token metadata changes the principal, so type 43 is sent and `Context.User` is reconciled |
+| ✓ | Best-effort | Run focused runtime test `RefreshAuth_RoutedClaimsUpdateFails_ReturnsPayloadAndUpdatesConnection` | injected type-43 send failure is attempted once; refresh still returns a claims payload ack and updates runtime claims/deadline |
 
 ---
 
