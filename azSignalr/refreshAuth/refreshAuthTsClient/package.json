@@ -1,0 +1,16 @@
+{
+  "name": "refresh-auth-ts-client",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "file:../../../../aspnetcore/src/SignalR/clients/ts/signalr"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.2"
+  }
+}

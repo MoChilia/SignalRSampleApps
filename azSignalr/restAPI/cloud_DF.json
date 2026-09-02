@@ -1,0 +1,15 @@
+{ 
+  "endpoints": { 
+    "activeDirectory": "https://login.windows-ppe.net", 
+    "activeDirectoryGraphResourceId": "https://graph.ppe.windows.net/", 
+    "activeDirectoryResourceId": "https://management.core.windows.net/", 
+    "gallery": "https://df.gallery.azure-test.net/", 
+    "management": "https://management-preview.core.windows-int.net/", 
+    "resourceManager": "https://api-dogfood.resources.windows-int.net/" 
+  }, 
+  "name": "AzureDFCloud", 
+  "suffixes": { 
+    "keyvaultDns": ".vault-int.azure-int.net", 
+    "mhsmDns": ".managedhsm-int.azure-int.net" 
+  } 
+} 

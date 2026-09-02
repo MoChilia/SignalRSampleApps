@@ -30,8 +30,8 @@ lookup ran; a 403 proves RBAC denied the request.
 
 ```powershell
 .\test-authz.ps1 `
-  -SignalRName test `
-  -ResourceGroup signalr-test-rg `
+  -SignalRName <signalr-name> `
+  -ResourceGroup <resource-group> `
   -ExpectedProfile read
 ```
 
