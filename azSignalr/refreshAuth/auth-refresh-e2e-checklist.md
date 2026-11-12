@@ -157,13 +157,20 @@ old-SDK compatibility, and bounded long-running scheduling/continuity cases are 
 |---|---|---|---|
 | ✓  | `refresh_disabled` | 404 | Start `D-host --AuthRefresh:Enabled=false`; connect client; enter `/refresh` |
 | ✓ | (no body) non-POST | 405 | Connect normally; enter `/probe get` |
-| ✓ | `missing_connection_token` | 400 | Connect normally; enter `/probe missing-id` |
+|   | `missing_connection_token` (missing header) | 400 | Connect normally; enter `/probe missing-header` (`missing-id` alias retained); new header-contract E2E not yet run |
+|   | `missing_connection_token` (query-only) | 400 | Enter `/probe query-only`: valid query `id`, no `X-SignalR-Connection-Token`; no query fallback |
+|   | `missing_connection_token` (empty header) | 400 | Enter `/probe empty-header`: empty header plus valid query `id`; no query fallback |
+|   | Header wins over query | 200 | After rejected-state checks, enter `/probe header-and-query`: valid header plus unknown query `id`; returns `accessToken` and `tokenLifetimeSeconds` |
 | ✓ | `invalid_token` | 401 | Enter `/probe no-auth`, `/probe invalid-auth`, and `/refresh-invalid` |
 |   | `windows_identity_not_supported` | 400 | Use the Windows-auth environment from section 4; enter `/refresh` |
 | ✓ | `permission_change_rejected` (gate) | 403 | Connect as `alice/user`; enter `/refresh-as alice blocked` |
 | ✓ | `connection_not_found` | 404 | Connect normally; enter `/probe unknown`; separately test a disconnected/v0 token in harness |
 | ✓ | `permission_change_rejected` (mismatch) | 403 | Connect as `alice/user`; enter `/refresh-as bob user` |
 | ✓ | `internal_server_error` | 500 | `[Environment]` Route refresh to an app pod that fails after ownership lookup, or inject ASRS/app exception in cross-pod E2E harness |
+
+Refresh tokens belong only in `X-SignalR-Connection-Token`; Claims still uses query `id`.
+Cross-origin browser callers must allow the refresh header in the CORS preflight response.
+The new header-contract rows above are unexecuted, not passed.
 
 ## 10. Negotiate version
 

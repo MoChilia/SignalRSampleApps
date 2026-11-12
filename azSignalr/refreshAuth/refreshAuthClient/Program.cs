@@ -567,7 +567,7 @@ static void PrintCommands() => Console.WriteLine(
     "Commands: message=broadcast; /refresh; /refresh-as <user> <role>; " +
     "/refresh-lifetime <seconds>; /refresh-no-exp; /refresh-invalid; /parallel [count]; " +
     "/parallel-lifetimes <seconds,...>; " +
-    "/wait <milliseconds>; /probe <get|missing-id|no-auth|invalid-auth|unknown>; " +
+    "/wait <milliseconds>; /probe <get|missing-header|missing-id|query-only|empty-header|header-and-query|no-auth|invalid-auth|unknown>; " +
     "/claims; /marker; /status; /help; empty line=exit.");
 
 async Task PrintConnectionClaimsAsync()
@@ -600,6 +600,7 @@ async Task PrintConnectionClaimsAsync()
 
 async Task ProbeRefreshEndpointAsync(string probe)
 {
+    probe = probe.ToLowerInvariant();
     var connectionToken = responseInspector.ConnectionToken;
     if (string.IsNullOrEmpty(connectionToken))
     {
@@ -608,24 +609,36 @@ async Task ProbeRefreshEndpointAsync(string probe)
     }
 
     var method = probe.Equals("get", StringComparison.OrdinalIgnoreCase) ? HttpMethod.Get : HttpMethod.Post;
-    var id = probe switch
+    var headerToken = probe switch
     {
-        "missing-id" => null,
+        "missing-header" or "missing-id" or "query-only" => null,
+        "empty-header" => string.Empty,
         "unknown" => "unknown-connection-token",
         _ => connectionToken,
+    };
+    // Only deliberate compatibility probes put a token in the query. Refresh never falls back to it.
+    var queryToken = probe switch
+    {
+        "query-only" or "empty-header" => connectionToken,
+        "header-and-query" => "unknown-connection-token",
+        _ => null,
     };
     var uriBuilder = new UriBuilder(hubUrl)
     {
         Path = $"{new Uri(hubUrl).AbsolutePath.TrimEnd('/')}/refresh",
     };
     var query = uriBuilder.Query.TrimStart('?');
-    uriBuilder.Query = id is null
+    uriBuilder.Query = queryToken is null
         ? query
         : string.IsNullOrEmpty(query)
-            ? $"id={Uri.EscapeDataString(id)}"
-            : $"{query}&id={Uri.EscapeDataString(id)}";
+            ? $"id={Uri.EscapeDataString(queryToken)}"
+            : $"{query}&id={Uri.EscapeDataString(queryToken)}";
     var uri = uriBuilder.Uri;
     using var request = new HttpRequestMessage(method, uri);
+    if (headerToken is not null)
+    {
+        request.Headers.TryAddWithoutValidation("X-SignalR-Connection-Token", headerToken);
+    }
 
     if (!probe.Equals("no-auth", StringComparison.OrdinalIgnoreCase))
     {

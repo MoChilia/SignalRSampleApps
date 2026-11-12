@@ -43,7 +43,7 @@ public static class SignalRFunctions
 
     /// <summary>
     /// Serverless auth refresh. Mirrors the ASP.NET Core <c>{hubUrl}/refresh</c> contract: the client
-    /// POSTs its connection token as <c>?id=</c>, and the <see cref="SignalRRefreshAttribute"/> binding
+    /// POSTs its connection token in <c>X-SignalR-Connection-Token</c>, and the <see cref="SignalRRefreshAttribute"/> binding
     /// drives the Management SDK's refresh flow and returns the refreshed token + next lifetime. No
     /// hand-rolled <c>:refreshAuth</c> REST call required.
     /// </summary>
@@ -52,7 +52,7 @@ public static class SignalRFunctions
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "refresh")] HttpRequest req,
         [SignalRRefresh(
             HubName = HubName,
-            ConnectionToken = "{Query.id}",
+            ConnectionToken = "{headers.X-SignalR-Connection-Token}",
             UserId = "{headers.x-user-id}",
             TokenLifetimeSeconds = ServiceTokenLifetimeSeconds)] SignalRConnectionInfo? refreshed,
         ILogger log)

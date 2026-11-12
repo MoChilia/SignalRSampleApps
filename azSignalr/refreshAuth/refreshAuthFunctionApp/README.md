@@ -16,10 +16,14 @@ directly to the Azure SignalR service and refreshes through these functions.
 | `POST /token` | `Token` | Mint a demo app-plane token (what the client's `AccessTokenProvider` fetches). |
 | `GET /sample-config` | `SampleConfig` | Report transport mode and supported scenario names for client `/status`. |
 | `POST /hub/negotiate` | `Negotiate` | Validate the app token, run the scenario's Management SDK negotiate operation, and return the ASRS redirect. |
-| `POST /hub/refresh?id={connectionToken}` | `Refresh` | Validate the new app token, optionally gate on current claims, run the scenario's refresh overload, and return a new service token. |
+| `POST /hub/refresh` | `Refresh` | Read `X-SignalR-Connection-Token`, validate the new app token, optionally gate on current claims, run the scenario's refresh overload, and return a new service token. |
 | `GET /hub/claims?id={connectionToken}` | `Claims` | Call `GetConnectionClaimsAsync` so claims and `asrs.s.aeo` can be compared before and after refresh. |
 | `POST /hub/broadcast` | `Broadcast` | Server→client push: `ServiceHubContext.Clients.All.SendAsync("ReceiveMessage", user, message)`. Needs no upstream. |
 | `SignalRTrigger` (upstream) | `SendToAll` | Client→server: the Azure SignalR service forwards a client's `SendToAll` message to this app's upstream webhook, which broadcasts it back. Requires upstream config (see below). |
+
+Refresh uses only `X-SignalR-Connection-Token`, never query `id`; a missing or empty header returns
+`400 missing_connection_token` even with a valid query token. Claims deliberately still uses query `id`.
+For cross-origin browser callers, allow the connection-token header in the CORS preflight response.
 
 `host.json` sets an empty `routePrefix`, so these routes match exactly what the .NET SignalR client
 appends to its hub URL. The **existing** `../refreshAuthClient` therefore works against this app
@@ -70,7 +74,8 @@ The client will:
 1. `POST /token` to mint an app token (~60s lifetime),
 2. `POST /hub/negotiate` with that token → get the ASRS redirect + `tokenLifetimeSeconds`,
 3. connect directly to Azure SignalR,
-4. ~20s before expiry `POST /hub/refresh?id={connectionToken}` with a freshly minted token →
+4. ~20s before expiry `POST /hub/refresh` with `X-SignalR-Connection-Token: <connectionToken>`
+   and a freshly minted bearer token →
   `RefreshConnectionAuthenticationAsync` advances the connection's auth deadline, so it stays connected gaplessly.
 
 Set the fifth argument (`autoRefresh`) to `off` to disable auto-refresh and watch the connection get

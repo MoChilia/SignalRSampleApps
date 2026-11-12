@@ -96,8 +96,12 @@ The proxy log must show negotiate and token requests going to A, and refresh goi
 ```text
 POST /token -> A
 POST /hub/negotiate?... -> A
-POST /hub/refresh?... -> B
+POST /hub/refresh -> B
 ```
+
+Refresh carries the connection token only in `X-SignalR-Connection-Token`, never query `id`.
+Any application routing query parameters are still forwarded unchanged. Cross-origin browser
+callers must allow the connection-token header in the CORS preflight response.
 
 Expected behavior:
 

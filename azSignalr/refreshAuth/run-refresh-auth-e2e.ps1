@@ -214,10 +214,13 @@ $commands = @(
     "/refresh-as alice blocked"
     "/refresh-as bob user"
     "/probe get"
-    "/probe missing-id"
+    "/probe missing-header"
+    "/probe query-only"
+    "/probe empty-header"
     "/probe no-auth"
     "/probe invalid-auth"
     "/probe unknown"
+    "/probe header-and-query"
 )
 Set-Content -Path $clientInput -Value $commands -Encoding utf8
 
@@ -227,9 +230,12 @@ $serverlessCommands = @(
     "/claims"
     "/refresh-as alice blocked"
     "/refresh-as bob user"
-    "/probe missing-id"
+    "/probe missing-header"
+    "/probe query-only"
+    "/probe empty-header"
     "/probe no-auth"
     "/probe invalid-auth"
+    "/probe header-and-query"
 )
 Set-Content -Path $serverlessClientInput -Value $serverlessCommands -Encoding utf8
 
@@ -323,10 +329,13 @@ try {
         Assert-Match "refresh callback ran" $output "(?m)^\[refresh\] succeeded at .+; new lifetime="
         Assert-Match "gate and user mismatch rejected" $output "\[http\] /hub/refresh => 403;.*error=permission_change_rejected" 2
         Assert-Match "GET rejected" $output "\[probe:get\] 405 MethodNotAllowed"
-        Assert-Match "missing connection token rejected" $output "\[probe:missing-id\] 400 BadRequest; body=.*missing_connection_token"
+        Assert-Match "missing connection header rejected" $output '\[probe:missing-header\] 400 BadRequest; body=.*"error":"missing_connection_token"'
+        Assert-Match "query-only token rejected" $output '\[probe:query-only\] 400 BadRequest; body=.*"error":"missing_connection_token"'
+        Assert-Match "empty connection header rejected" $output '\[probe:empty-header\] 400 BadRequest; body=.*"error":"missing_connection_token"'
         Assert-Match "missing app auth rejected" $output "\[probe:no-auth\] 401 Unauthorized"
         Assert-Match "invalid app auth rejected" $output "\[probe:invalid-auth\] 401 Unauthorized"
         Assert-Match "unknown connection rejected" $output "\[probe:unknown\] 404 NotFound; body=.*connection_not_found"
+        Assert-Match "header wins over unknown query token" $output '\[probe:header-and-query\] 200 OK; body=.*"accessToken":"[^"]+".*"tokenLifetimeSeconds":\d+'
 
         Write-Host "Running Default-mode TypeScript smoke scenario..."
         $tsOutput = Invoke-TypeScriptClientCase "default-typescript-smoke" $ServerUrl "ws"
@@ -398,9 +407,12 @@ try {
         Assert-Match "Serverless claims read succeeded" $serverlessOutput '\[claims\] 200 OK; body=.*"claims"' 2
         Assert-Match "Serverless gate rejected blocked role" $serverlessOutput "\[http\] /hub/refresh => 403;.*permission_change_rejected"
         Assert-Match "Serverless same-user enforcement rejected mismatch" $serverlessOutput "\[http\] /hub/refresh => 403;.*refresh_failed"
-        Assert-Match "Serverless missing connection token rejected" $serverlessOutput "\[probe:missing-id\] 400 BadRequest; body=.*missing_connection_token"
+        Assert-Match "Serverless missing connection header rejected" $serverlessOutput '\[probe:missing-header\] 400 BadRequest; body=.*"error":"missing_connection_token"'
+        Assert-Match "Serverless query-only token rejected" $serverlessOutput '\[probe:query-only\] 400 BadRequest; body=.*"error":"missing_connection_token"'
+        Assert-Match "Serverless empty connection header rejected" $serverlessOutput '\[probe:empty-header\] 400 BadRequest; body=.*"error":"missing_connection_token"'
         Assert-Match "Serverless missing app auth rejected" $serverlessOutput "\[probe:no-auth\] 401 Unauthorized"
         Assert-Match "Serverless invalid app auth rejected" $serverlessOutput "\[probe:invalid-auth\] 401 Unauthorized"
+        Assert-Match "Serverless header wins over unknown query token" $serverlessOutput '\[probe:header-and-query\] 200 OK; body=.*"accessToken":"[^"]+".*"tokenLifetimeSeconds":\d+'
 
         $serverlessConnectionIds = [regex]::Matches($serverlessOutput, "(?m)^\[conn\] connected: (.+)$") |
             ForEach-Object { $_.Groups[1].Value.Trim() } |

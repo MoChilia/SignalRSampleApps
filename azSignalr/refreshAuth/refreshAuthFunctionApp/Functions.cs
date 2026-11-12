@@ -199,7 +199,7 @@ public sealed class RefreshAuthFunctions(SignalRService signalR, AppTokenProvide
     public async Task<IActionResult> Refresh(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "hub/refresh")] HttpRequest request)
     {
-        var connectionToken = request.Query["id"].FirstOrDefault();
+        var connectionToken = request.Headers["X-SignalR-Connection-Token"].ToString();
         if (string.IsNullOrEmpty(connectionToken))
         {
             return new BadRequestObjectResult(new { error = "missing_connection_token" });

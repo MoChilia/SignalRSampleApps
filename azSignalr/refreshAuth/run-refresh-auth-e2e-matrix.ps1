@@ -1084,14 +1084,18 @@ try {
 
         $name = "default-endpoint-errors"
         $output = Invoke-ClientCase $name $ServerUrl "ws" "token" "standard" "on" @(
-            "/probe get", "/probe missing-id", "/probe no-auth", "/probe invalid-auth", "/probe unknown", "/refresh-invalid"
+            "/probe get", "/probe missing-header", "/probe query-only", "/probe empty-header",
+            "/probe no-auth", "/probe invalid-auth", "/probe unknown", "/refresh-invalid", "/probe header-and-query"
         )
         Assert-CaseMatch $name $output "GET rejected" '(?m)^\[probe:get\] 405 MethodNotAllowed;' | Out-Null
-        Assert-CaseMatch $name $output "missing connection token rejected" '(?m)^\[probe:missing-id\] 400 BadRequest;.*missing_connection_token' | Out-Null
+        Assert-CaseMatch $name $output "missing connection header rejected" '(?m)^\[probe:missing-header\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
+        Assert-CaseMatch $name $output "query-only token rejected" '(?m)^\[probe:query-only\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
+        Assert-CaseMatch $name $output "empty connection header rejected" '(?m)^\[probe:empty-header\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
         Assert-CaseMatch $name $output "missing auth rejected" '(?m)^\[probe:no-auth\] 401 Unauthorized;' | Out-Null
         Assert-CaseMatch $name $output "invalid auth rejected" '(?m)^\[probe:invalid-auth\] 401 Unauthorized;' | Out-Null
         Assert-CaseMatch $name $output "unknown connection rejected" '(?m)^\[probe:unknown\] 404 NotFound;.*connection_not_found' | Out-Null
         Assert-CaseMatch $name $output "invalid refresh token rejected" '\[http\] /hub/refresh => 401;' | Out-Null
+        Assert-CaseMatch $name $output "header wins over unknown query token" '(?m)^\[probe:header-and-query\] 200 OK; body=.*"accessToken":"[^"]+".*"tokenLifetimeSeconds":\d+' | Out-Null
 
         $name = "default-rejected-state"
         $output = Invoke-ClientCase $name $ServerUrl "ws" "token" "standard" "on" @(
@@ -1339,12 +1343,16 @@ try {
 
             $name = "serverless-transient-endpoint-errors"
             $output = Invoke-ClientCase $name $FunctionUrl "ws" "token" "standard" "on" @(
-                "/probe missing-id", "/probe no-auth", "/probe invalid-auth", "/probe unknown"
+                "/probe missing-header", "/probe query-only", "/probe empty-header",
+                "/probe no-auth", "/probe invalid-auth", "/probe unknown", "/probe header-and-query"
             )
-            Assert-CaseMatch $name $output "REST missing token rejected" '(?m)^\[probe:missing-id\] 400 BadRequest;.*missing_connection_token' | Out-Null
+            Assert-CaseMatch $name $output "REST missing connection header rejected" '(?m)^\[probe:missing-header\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
+            Assert-CaseMatch $name $output "REST query-only token rejected" '(?m)^\[probe:query-only\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
+            Assert-CaseMatch $name $output "REST empty connection header rejected" '(?m)^\[probe:empty-header\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
             Assert-CaseMatch $name $output "REST missing auth rejected" '(?m)^\[probe:no-auth\] 401 Unauthorized;' | Out-Null
             Assert-CaseMatch $name $output "REST invalid auth rejected" '(?m)^\[probe:invalid-auth\] 401 Unauthorized;' | Out-Null
             Assert-CaseMatch $name $output "REST unknown connection rejected" '(?m)^\[probe:unknown\] 404 NotFound;.*refresh_failed' | Out-Null
+            Assert-CaseMatch $name $output "REST header wins over unknown query token" '(?m)^\[probe:header-and-query\] 200 OK; body=.*"accessToken":"[^"]+".*"tokenLifetimeSeconds":\d+' | Out-Null
 
             Stop-ProcessTree $hostProcess
             $hostProcess = $null
@@ -1425,12 +1433,16 @@ try {
 
         $name = "serverless-endpoint-errors"
         $output = Invoke-ClientCase $name $FunctionUrl "ws" "token" "standard" "on" @(
-            "/probe missing-id", "/probe no-auth", "/probe invalid-auth", "/probe unknown"
+            "/probe missing-header", "/probe query-only", "/probe empty-header",
+            "/probe no-auth", "/probe invalid-auth", "/probe unknown", "/probe header-and-query"
         )
-        Assert-CaseMatch $name $output "serverless missing token rejected" '(?m)^\[probe:missing-id\] 400 BadRequest;.*missing_connection_token' | Out-Null
+        Assert-CaseMatch $name $output "serverless missing connection header rejected" '(?m)^\[probe:missing-header\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
+        Assert-CaseMatch $name $output "serverless query-only token rejected" '(?m)^\[probe:query-only\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
+        Assert-CaseMatch $name $output "serverless empty connection header rejected" '(?m)^\[probe:empty-header\] 400 BadRequest; body=.*"error":"missing_connection_token"' | Out-Null
         Assert-CaseMatch $name $output "serverless missing auth rejected" '(?m)^\[probe:no-auth\] 401 Unauthorized;' | Out-Null
         Assert-CaseMatch $name $output "serverless invalid auth rejected" '(?m)^\[probe:invalid-auth\] 401 Unauthorized;' | Out-Null
         Assert-CaseMatch $name $output "serverless unknown connection rejected" '(?m)^\[probe:unknown\] 404 NotFound;.*refresh_failed' | Out-Null
+        Assert-CaseMatch $name $output "serverless header wins over unknown query token" '(?m)^\[probe:header-and-query\] 200 OK; body=.*"accessToken":"[^"]+".*"tokenLifetimeSeconds":\d+' | Out-Null
 
         foreach ($negative in @(
             @{ Scenario = "past-negotiate-deadline"; Error = "expired_authentication_deadline" }

@@ -15,10 +15,12 @@ Function Apps consume — so refresh is declarative instead of hand-rolling the 
 | Route | Binding | Purpose |
 | --- | --- | --- |
 | `POST /api/negotiate` | `[SignalRConnectionInfo]` | Explicitly enables authentication refresh and returns `{ url, accessToken, tokenLifetimeSeconds }`. The one-hour service-token maximum lets a refresh-aware client schedule refresh. |
-| `POST /api/refresh?id={connectionToken}` | `[SignalRRefresh]` | Renews the live connection's service token without reconnecting; returns `{ accessToken, tokenLifetimeSeconds }`. |
+| `POST /api/refresh` | `[SignalRRefresh]` | Reads `X-SignalR-Connection-Token` and renews the live connection's service token without reconnecting; returns `{ accessToken, tokenLifetimeSeconds }`. |
 | `POST /api/broadcast` | `[SignalR]` output | Pushes `ReceiveMessage` (user, message) to all clients. Body: `{ "user": "...", "message": "..." }`. |
 
 The client sends its user id via the `x-user-id` header (mapped into the negotiate/refresh claims).
+The connection token binds from `{headers.X-SignalR-Connection-Token}` only, with no query `id`
+fallback. Cross-origin browser callers must allow this header in the CORS preflight response.
 
 ## Prerequisites / build
 
@@ -85,8 +87,8 @@ then carries the validated token expiration through negotiate and refresh.
    # negotiate
    curl -X POST http://localhost:7071/api/negotiate -H "x-user-id: alice"
 
-   # refresh (id = the connection token the client holds)
-   curl -X POST "http://localhost:7071/api/refresh?id=<connectionToken>" -H "x-user-id: alice"
+   # refresh (the connection token the client holds goes only in the header)
+   curl -X POST "http://localhost:7071/api/refresh" -H "X-SignalR-Connection-Token: <connectionToken>" -H "x-user-id: alice"
 
    # broadcast to all clients
    curl -X POST http://localhost:7071/api/broadcast -H "Content-Type: application/json" -d '{"user":"server","message":"hello all"}'
@@ -106,4 +108,3 @@ containing `NegotiateWithTokenLifetimeAsync`, `RefreshConnectionAuthenticationOp
 `GetConnectionClaimsAsync`. Once that package is available, replace the `ProjectReference` in
 [refreshWebJobsFunctionApp.csproj](refreshWebJobsFunctionApp.csproj) with a normal
 `PackageReference` and drop the local-build `-p:` flags. The function code does not change.
-

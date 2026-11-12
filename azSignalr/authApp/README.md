@@ -21,6 +21,18 @@ Or set the environment variable:
 $env:Azure__SignalR__ConnectionString = "<your connection string>"
 ```
 
+Test strict Azure SignalR client token audience validation:
+
+```powershell
+.\test-token-audience.ps1
+```
+
+The script first verifies that a token for `/client/?hub=hub` can negotiate with `hub`, then verifies that these mismatches return HTTP 401:
+
+- `/client/?hub=hub` against `hubABC`
+- `/client/?hub=hubABC` against `hub`
+- `/client/?hub=zzz` against `hub`
+
 Run the app:
 
 ```powershell

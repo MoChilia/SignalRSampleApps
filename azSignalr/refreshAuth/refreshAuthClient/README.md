@@ -133,12 +133,20 @@ These commands cover the locally reachable Default-mode rows in the E2E checklis
 | `/refresh-invalid` | Invalid app bearer token: `401 invalid_token`. |
 | `/parallel 2` | Concurrent refresh serialization for the same connection. |
 | `/probe get` | Non-POST refresh request: `405`. |
-| `/probe missing-id` | POST without connection token: `400 missing_connection_token`. |
+| `/probe missing-header` | POST without connection-token header: `400 missing_connection_token` (`missing-id` remains an alias). |
+| `/probe query-only` | Valid query `id` but no connection-token header: `400 missing_connection_token`. |
+| `/probe empty-header` | Empty connection-token header plus valid query `id`: `400 missing_connection_token` (no fallback). |
+| `/probe header-and-query` | Valid connection-token header plus unknown query `id`: `200` with refreshed `accessToken` and `tokenLifetimeSeconds` (header wins). |
 | `/probe no-auth` | POST without app credentials: `401 invalid_token`. |
 | `/probe invalid-auth` | POST with malformed app token: `401 invalid_token`. |
-| `/probe unknown` | Unknown connection token: `404 connection_not_found`. |
+| `/probe unknown` | Unknown header token: `404 connection_not_found` (Serverless: `refresh_failed`). |
 | `/claims` | Serverless: call the sample's Management SDK claims endpoint and print current claims/deadline. |
 | `/status` | Live identity, role, marker, app `exp`, host switches, service JWT lifetime, and decoded service-token claims. |
+
+Normal probes send `X-SignalR-Connection-Token`, not query `id`, and retain existing hub URL
+query parameters. Client-facing refresh never falls back to query `id`. Cross-origin browser
+clients must allow this header in the CORS preflight response. Run `header-and-query` after
+rejected-state checks because it performs a real refresh.
 
 Run cookie mode for expiration-only refresh (the marker remains unchanged):
 

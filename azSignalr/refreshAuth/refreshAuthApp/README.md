@@ -30,10 +30,14 @@ Phase 1 acks: `Ok` on advance, `NotFound` for unknown connections.
 
 ## What this sample shows
 
+Client-facing refresh uses only `X-SignalR-Connection-Token`; query `id` is never a fallback.
+Browser cross-origin callers must allow this header in the CORS preflight response.
+
 The **Refresh (/hub/refresh)** button drives the shipped Default-mode path:
 
 1. The browser mints a fresh app token from `/token` (the IdP stand-in) so its `exp` is the new
-   expiration, then POSTs it to `{hubUrl}/refresh?id={connectionToken}` with
+   expiration, then POSTs it to `{hubUrl}/refresh` with
+   `X-SignalR-Connection-Token: <connectionToken>` and
    `Authorization: Bearer {fresh-app-token}`. The `connectionToken` is captured from the negotiate
    response by `ConnectionTokenCapturingHttpClient`.
 2. `AddAzureSignalR()` auto-registers `AuthRefreshMatcherPolicy`, which intercepts `/hub/refresh`
